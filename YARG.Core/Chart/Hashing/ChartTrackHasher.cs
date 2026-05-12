@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Data.HashFunction.Blake3;
 
 namespace YARG.Core.Chart
 {
@@ -109,7 +108,7 @@ namespace YARG.Core.Chart
 
         public static bool TryCalculateTrackHash(SongChart chart, Instrument instrument, Difficulty difficulty, out BTrackHashResult result)
         {
-            result = null!;
+            result = default;
 
             List<Phrase> phrases;
             List<BTrackNote> notes;
@@ -151,7 +150,7 @@ namespace YARG.Core.Chart
                 GetDrumFreestyles(phrases),
                 notes);
 
-            result = new BTrackHashResult(ComputeHash(bTrack), bTrack);
+            result = new BTrackHashResult(bTrack);
             return true;
         }
 
@@ -481,13 +480,5 @@ namespace YARG.Core.Chart
             writer.Write((byte) value);
         }
 
-        private static string ComputeHash(byte[] bTrack)
-        {
-            var blake3 = Blake3Factory.Instance.Create(new Blake3Config { HashSizeInBits = 256 });
-            var hash = blake3.ComputeHash(bTrack).Hash;
-            return Convert.ToBase64String(hash)
-                .Replace('+', '-')
-                .Replace('/', '_');
-        }
     }
 }
