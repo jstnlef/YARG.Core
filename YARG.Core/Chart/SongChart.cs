@@ -117,7 +117,7 @@ namespace YARG.Core.Chart
         // To explicitly allow creation without going through a file
         public SongChart(uint resolution)
         {
-            SyncTrack = new(resolution);
+            SyncTrack = new SyncTrack(resolution);
         }
 
         internal SongChart(ISongLoader loader)
