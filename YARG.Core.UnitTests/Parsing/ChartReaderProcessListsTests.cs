@@ -477,7 +477,7 @@ namespace YARG.Core.UnitTests.Parsing
         }
 
         [Test]
-        public void GuitarProcessList_SplitsSameTickSoloEndAndStartWithoutOverlap()
+        public void GuitarProcessList_PairsSameTickNestedSoloEndWithClosestPreviousStart()
         {
             var chartText = ChartText.Chart(
                 ChartText.SongSection(),
@@ -495,9 +495,9 @@ namespace YARG.Core.UnitTests.Parsing
             {
                 Assert.That(phrases, Has.Count.EqualTo(2));
                 Assert.That(phrases, Has.One.Matches<MoonPhrase>(phrase =>
-                    phrase is { tick: 100, length: 100, type: MoonPhrase.Type.Solo }));
+                    phrase is { tick: 100, length: 199, type: MoonPhrase.Type.Solo }));
                 Assert.That(phrases, Has.One.Matches<MoonPhrase>(phrase =>
-                    phrase is { tick: 200, length: 99, type: MoonPhrase.Type.Solo }));
+                    phrase is { tick: 200, length: 0, type: MoonPhrase.Type.Solo }));
             }
         }
 

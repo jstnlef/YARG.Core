@@ -37,6 +37,47 @@ namespace MoonscraperChartEditor.Song.IO
             { MidIOHelper.HARMONY_3_TRACK_2, false },
         };
 
+        private static string GetRecognizedTrackName(TrackChunk track)
+        {
+            string firstTrackName = string.Empty;
+            long tick = 0;
+
+            foreach (var midiEvent in track.Events)
+            {
+                tick += midiEvent.DeltaTime;
+                if (tick != 0)
+                {
+                    break;
+                }
+
+                if (midiEvent is not SequenceTrackNameEvent trackName)
+                {
+                    continue;
+                }
+
+                firstTrackName = firstTrackName.Length == 0 ? trackName.Text : firstTrackName;
+                if (IsRecognizedTrackName(trackName.Text))
+                {
+                    return trackName.Text;
+                }
+            }
+
+            return firstTrackName;
+        }
+
+        private static bool IsRecognizedTrackName(string trackName)
+        {
+            return trackName is MidIOHelper.BEAT_TRACK
+                or MidIOHelper.EVENTS_TRACK
+                or MidIOHelper.VENUE_TRACK
+                or MidIOHelper.PRO_KEYS_EXPERT
+                or MidIOHelper.PRO_KEYS_HARD
+                or MidIOHelper.PRO_KEYS_MEDIUM
+                or MidIOHelper.PRO_KEYS_EASY
+                or MidIOHelper.VOCALS_TRACK
+                || MidIOHelper.TrackNameToInstrumentMap.ContainsKey(trackName);
+        }
+
         private struct TimedMidiEvent
         {
             public MidiEvent midiEvent;
@@ -147,7 +188,7 @@ namespace MoonscraperChartEditor.Song.IO
                     continue;
                 }
 
-                string trackName = track.GetTrackName();
+                string trackName = GetRecognizedTrackName(track);
                 if (trackName == MidIOHelper.EVENTS_TRACK)
                 {
                     ReadSongGlobalEvents(track, song);
@@ -170,7 +211,7 @@ namespace MoonscraperChartEditor.Song.IO
                     continue;
                 }
 
-                string trackName = track.GetTrackName();
+                string trackName = GetRecognizedTrackName(track);
                 switch (trackName)
                 {
                     case MidIOHelper.BEAT_TRACK:
@@ -866,6 +907,9 @@ namespace MoonscraperChartEditor.Song.IO
                 switch (noteType)
                 {
                     case MoonNote.MoonNoteType.Strum:
+                        if ((note.flags & MoonNote.Flags.Forced_Hopo) != 0)
+                            continue;
+
                         note.flags |= MoonNote.Flags.Forced_Strum;
                         note.flags &= ~MoonNote.Flags.Forced_Hopo;
                         if (!note.isChord && note.IsNaturalHopo(song.hopoThreshold))
@@ -957,9 +1001,9 @@ namespace MoonscraperChartEditor.Song.IO
 
             uint startTick = (uint)timedEvent.startTick;
             uint endTick = (uint)timedEvent.endTick;
-            // Tap note phrases do *not* exclude the last tick, based on both Phase Shift and Clone Hero
-            // if (endTick > startTick)
-            //     --endTick;
+            // Exclude the last tick of the phrase
+            if (endTick > startTick)
+                --endTick;
 
             if (startEvent.difficulty == PhaseShiftSysEx.Difficulty.All)
             {

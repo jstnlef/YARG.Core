@@ -279,7 +279,7 @@ namespace MoonscraperChartEditor.Song
             // Checking state in this order is important
             return !isChord &&
                 previous != null &&
-                (previous.isChord || rawNote != previous.rawNote) &&
+                (previous.isChord ? (previous.mask & (1 << rawNote)) == 0 : rawNote != previous.rawNote) &&
                 tick - previous.tick <= hopoThreshold;
         }
 

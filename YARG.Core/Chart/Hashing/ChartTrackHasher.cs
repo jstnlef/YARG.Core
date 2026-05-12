@@ -325,72 +325,67 @@ namespace YARG.Core.Chart
         private static List<BTrackNote> NormalizeNotes(List<BTrackNote> notes)
         {
             return notes
-                .GroupBy((note) => new { note.Tick, note.Type })
-                .Select((group) => new BTrackNote(
+                .GroupBy(note => new { note.Tick, note.Type })
+                .Select(group => new BTrackNote(
                     group.Key.Tick,
-                    group.Max((note) => note.Length),
+                    group.Max(note => note.Length),
                     group.Key.Type,
-                    CombineFlags(group.Select((note) => note.Flags))))
-                .OrderBy((note) => note.Tick)
-                .ThenBy((note) => note.Type)
+                    CombineFlags(group.Select(note => note.Flags))))
+                .OrderBy(note => note.Tick)
+                .ThenBy(note => note.Type)
                 .ToList();
         }
 
         private static BTrackNoteFlags CombineFlags(IEnumerable<BTrackNoteFlags> flags)
         {
-            BTrackNoteFlags result = BTrackNoteFlags.None;
-            foreach (var flag in flags)
-            {
-                result |= flag;
-            }
-            return result;
+            return flags.Aggregate(BTrackNoteFlags.None, (current, flag) => current | flag);
         }
 
         private static List<BTrackPhrase> GetPhrases(List<Phrase> phrases, PhraseType type)
         {
             return phrases
-                .Where((phrase) => phrase.Type == type)
-                .GroupBy((phrase) => phrase.Tick)
-                .Select((group) => new BTrackPhrase(group.Key, group.Max((phrase) => phrase.TickLength)))
-                .OrderBy((phrase) => phrase.Tick)
+                .Where(phrase => phrase.Type == type)
+                .GroupBy(phrase => phrase.Tick)
+                .Select(group => new BTrackPhrase(group.Key, group.Max(phrase => phrase.TickLength)))
+                .OrderBy(phrase => phrase.Tick)
                 .ToList();
         }
 
         private static List<BTrackFlexLane> GetFlexLanes(List<Phrase> phrases)
         {
             return phrases
-                .Where((phrase) => phrase.Type is PhraseType.TremoloLane or PhraseType.TrillLane)
-                .GroupBy((phrase) => new { phrase.Tick, IsDouble = phrase.Type == PhraseType.TrillLane })
-                .Select((group) => new BTrackFlexLane(group.Key.Tick, group.Max((phrase) => phrase.TickLength), group.Key.IsDouble))
-                .OrderBy((lane) => lane.Tick)
-                .ThenBy((lane) => lane.IsDouble)
+                .Where(phrase => phrase.Type is PhraseType.TremoloLane or PhraseType.TrillLane)
+                .GroupBy(phrase => new { phrase.Tick, IsDouble = phrase.Type == PhraseType.TrillLane })
+                .Select(group => new BTrackFlexLane(group.Key.Tick, group.Max(phrase => phrase.TickLength), group.Key.IsDouble))
+                .OrderBy(lane => lane.Tick)
+                .ThenBy(lane => lane.IsDouble)
                 .ToList();
         }
 
         private static List<BTrackDrumFreestyle> GetDrumFreestyles(List<Phrase> phrases)
         {
-            var codas = phrases.Where((phrase) => phrase.Type == PhraseType.Coda).ToList();
+            var codas = phrases.Where(phrase => phrase.Type == PhraseType.Coda).ToList();
             return phrases
-                .Where((phrase) => phrase.Type == PhraseType.DrumFill)
-                .Select((phrase) => new BTrackDrumFreestyle(
+                .Where(phrase => phrase.Type == PhraseType.DrumFill)
+                .Select(phrase => new BTrackDrumFreestyle(
                     phrase.Tick,
                     phrase.TickLength,
-                    codas.Any((coda) => phrase.Tick >= coda.Tick && phrase.Tick < coda.Tick + Math.Max(coda.TickLength, 1))))
-                .OrderBy((phrase) => phrase.Tick)
+                    codas.Any(coda => phrase.Tick >= coda.Tick && phrase.Tick < coda.Tick + Math.Max(coda.TickLength, 1))))
+                .OrderBy(phrase => phrase.Tick)
                 .ToList();
         }
 
         private static List<BTrackPhrase> PruneEmptyPhrases(List<BTrackPhrase> phrases, List<BTrackNote> notes)
         {
             return phrases
-                .Where((phrase) => notes.Any((note) => note.Tick >= phrase.Tick && note.Tick < phrase.Tick + Math.Max(phrase.Length, 1)))
+                .Where(phrase => notes.Any(note => note.Tick >= phrase.Tick && note.Tick < phrase.Tick + Math.Max(phrase.Length, 1)))
                 .ToList();
         }
 
         private static List<BTrackFlexLane> PruneEmptyFlexLanes(List<BTrackFlexLane> lanes, List<BTrackNote> notes)
         {
             return lanes
-                .Where((lane) => notes.Any((note) => note.Tick >= lane.Tick && note.Tick < lane.Tick + Math.Max(lane.Length, 1)))
+                .Where(lane => notes.Any(note => note.Tick >= lane.Tick && note.Tick < lane.Tick + Math.Max(lane.Length, 1)))
                 .ToList();
         }
 
@@ -409,7 +404,7 @@ namespace YARG.Core.Chart
             writer.Write(VERSION);
             writer.Write(syncTrack.Resolution);
 
-            var tempos = GetLastPerTick(syncTrack.Tempos, (tempo) => tempo.Tick);
+            var tempos = GetLastPerTick(syncTrack.Tempos, tempo => tempo.Tick);
             writer.Write(tempos.Count);
             foreach (var tempo in tempos)
             {
@@ -417,7 +412,7 @@ namespace YARG.Core.Chart
                 writer.Write(tempo.BeatsPerMinute);
             }
 
-            var timeSignatures = GetLastPerTick(syncTrack.TimeSignatures, (timeSignature) => timeSignature.Tick);
+            var timeSignatures = GetLastPerTick(syncTrack.TimeSignatures, timeSignature => timeSignature.Tick);
             writer.Write(timeSignatures.Count);
             foreach (var timeSignature in timeSignatures)
             {
@@ -472,8 +467,8 @@ namespace YARG.Core.Chart
         {
             return events
                 .Select((value, index) => new { value, index })
-                .GroupBy((item) => getTick(item.value))
-                .Select((group) => group.OrderByDescending((item) => item.index).First().value)
+                .GroupBy(item => getTick(item.value))
+                .Select(group => group.OrderByDescending(item => item.index).First().value)
                 .OrderBy(getTick)
                 .ToList();
         }
