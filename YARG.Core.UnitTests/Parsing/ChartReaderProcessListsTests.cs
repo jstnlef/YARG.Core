@@ -374,7 +374,7 @@ namespace YARG.Core.UnitTests.Parsing
         }
 
         [Test]
-        public void GuitarProcessList_ChordToSameFretSingleWithinHopoThreshold_RemainsStrum()
+        public void GuitarProcessList_ChordToSameFretSingleWithinHopoThreshold_IsHopo()
         {
             var chartText = ChartText.Chart(
                 ChartText.SongSection(),
@@ -388,7 +388,7 @@ namespace YARG.Core.UnitTests.Parsing
             var notes = song.GetChart(MoonInstrument.Guitar, MoonDifficulty.Expert).notes;
             var redAfterChord = notes.Single(note => note.tick == 64);
 
-            Assert.That(redAfterChord.GetGuitarNoteType(song.hopoThreshold), Is.EqualTo(MoonNote.MoonNoteType.Strum));
+            Assert.That(redAfterChord.GetGuitarNoteType(song.hopoThreshold), Is.EqualTo(MoonNote.MoonNoteType.Hopo));
         }
 
         [Test]

@@ -152,7 +152,10 @@ namespace MoonscraperChartEditor.Song.IO
                 throw new InvalidDataException("MIDI file has no beat resolution set!");
             }
 
-            var song = new MoonSong((uint) ticks.TicksPerQuarterNote);
+            var song = new MoonSong((uint) ticks.TicksPerQuarterNote)
+            {
+                UsesMidiNaturalHopoSubsetException = true,
+            };
 
             // Apply settings
             song.hopoThreshold = settings.HopoThreshold > ParseSettings.SETTING_DEFAULT
@@ -912,7 +915,7 @@ namespace MoonscraperChartEditor.Song.IO
 
                         note.flags |= MoonNote.Flags.Forced_Strum;
                         note.flags &= ~MoonNote.Flags.Forced_Hopo;
-                        if (!note.isChord && note.IsNaturalHopo(song.hopoThreshold))
+                        if (!note.isChord && note.IsNaturalHopo(song.hopoThreshold, song.UsesMidiNaturalHopoSubsetException))
                             note.flags |= MoonNote.Flags.Forced;
                         else
                             note.flags &= ~MoonNote.Flags.Forced;
@@ -921,7 +924,7 @@ namespace MoonscraperChartEditor.Song.IO
                     case MoonNote.MoonNoteType.Hopo:
                         note.flags |= MoonNote.Flags.Forced_Hopo;
                         note.flags &= ~MoonNote.Flags.Forced_Strum;
-                        if (note.isChord || !note.IsNaturalHopo(song.hopoThreshold))
+                        if (note.isChord || !note.IsNaturalHopo(song.hopoThreshold, song.UsesMidiNaturalHopoSubsetException))
                             note.flags |= MoonNote.Flags.Forced;
                         else
                             note.flags &= ~MoonNote.Flags.Forced;
@@ -937,7 +940,7 @@ namespace MoonscraperChartEditor.Song.IO
                         continue;
                 }
 
-                var finalType = note.GetGuitarNoteType(song.hopoThreshold);
+                var finalType = note.GetGuitarNoteType(song.hopoThreshold, song.UsesMidiNaturalHopoSubsetException);
                 YargLogger.AssertFormat(finalType == noteType, "Note type forcing was not successful! Tried to apply {0}, got {1} instead", noteType, finalType);
             }
         }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+// ReSharper disable InconsistentNaming
 
 namespace YARG.Core.Chart
 {
@@ -345,7 +346,8 @@ namespace YARG.Core.Chart
             return phrases
                 .Where(phrase => phrase.Type == type)
                 .GroupBy(phrase => phrase.Tick)
-                .Select(group => new BTrackPhrase(group.Key, group.Max(phrase => phrase.TickLength)))
+                .Select(group => new BTrackPhrase(group.Key, group.Max(phrase =>
+                    phrase.TickLength + (type == PhraseType.Solo ? 1 : 0))))
                 .OrderBy(phrase => phrase.Tick)
                 .ToList();
         }
