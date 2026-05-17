@@ -123,6 +123,12 @@ internal sealed class TestSongEntry : SongEntry
         return IsValid(in parts);
     }
 
+    public static ScanExpected<long> ParseMidiForTest(FixedArray<byte> file, ref AvailableParts parts,
+        ref DrumsType drumsType)
+    {
+        return ParseMidi(file, ref parts, ref drumsType);
+    }
+
     public override DateTime GetLastWriteTime() => DateTime.UnixEpoch;
 
     public override SongChart? LoadChart() => null;
