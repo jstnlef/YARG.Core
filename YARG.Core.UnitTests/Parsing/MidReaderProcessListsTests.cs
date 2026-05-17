@@ -210,6 +210,26 @@ public class MidReaderProcessListsTests
     }
 
     [Test]
+    public void SongChart_MidiChordToSameFretSingle_IsStrumWithoutLoaderCancellation()
+    {
+        var red = MidIOHelper.GUITAR_DIFF_START_LOOKUP[Difficulty.Expert] + 1;
+        var yellow = MidIOHelper.GUITAR_DIFF_START_LOOKUP[Difficulty.Expert] + 2;
+        var settings = ParseSettings.Default_Midi;
+        settings.ChordHopoCancellation = false;
+        var midi = MakeMidi(MakeTrack(MidIOHelper.GUITAR_TRACK,
+            Note(0, 10, red),
+            Note(0, 10, yellow),
+            Note(64, 100, red)));
+
+        var songChart = SongChart.FromMidi(in settings, midi);
+        var notes = songChart.GetFiveFretTrack(Instrument.FiveFretGuitar)
+            .GetDifficulty(YARG.Core.Difficulty.Expert).Notes;
+        var redAfterChord = notes.Single(note => note.Tick == 64);
+
+        Assert.That(redAfterChord.Type, Is.EqualTo(GuitarNoteType.Strum));
+    }
+
+    [Test]
     public void CodaPostProcessing_SetsCodaEndAndConvertsDrumFillToBigRockEnding()
     {
         var red = MidIOHelper.DRUMS_DIFF_START_LOOKUP[Difficulty.Expert] + 1;
