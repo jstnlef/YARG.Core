@@ -10,11 +10,11 @@ using System.Threading.Tasks;
 /// Batch mode: walks a chart directory, parses each chart with YARG.Core,
 /// and dumps JSON files to an output directory matching the folder structure.
 ///
-/// Usage: ChartDump --batch <input-dir> <output-dir> [limit]
+/// Usage: ChartDump --batch <input-dir> <output-dir> [limit] [--pretty]
 /// </summary>
 static class DumpAll
 {
-    public static int Run(string inputDir, string outputDir, int limit)
+    public static int Run(string inputDir, string outputDir, int limit, bool writeIndented = false)
     {
         if (!Directory.Exists(inputDir))
         {
@@ -33,7 +33,7 @@ static class DumpAll
 
         var jsonOptions = new JsonSerializerOptions
         {
-            WriteIndented = false,
+            WriteIndented = writeIndented,
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
             Converters = { new JsonStringEnumConverter() }
         };

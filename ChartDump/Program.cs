@@ -24,18 +24,21 @@ class Program
     {
         if (args.Length >= 3 && args[0] == "--batch")
         {
-            var limit = args.Length >= 4 ? int.Parse(args[3]) : 0;
-            return DumpAll.Run(args[1], args[2], limit);
+            var limit = args.Skip(3).FirstOrDefault(arg => int.TryParse(arg, out _));
+            var pretty = HasFlag(args, "--pretty") || HasFlag(args, "-p");
+            return DumpAll.Run(args[1], args[2], limit is null ? 0 : int.Parse(limit), pretty);
         }
 
-        if (args.Length < 1)
+        if (args.Length < 1 || HasFlag(args, "--help") || HasFlag(args, "-h"))
         {
             Console.Error.WriteLine("Usage: ChartDump <path-to-chart-folder-or-file>");
-            Console.Error.WriteLine("       ChartDump --batch <input-dir> <output-dir> [limit]");
-            return 1;
+            Console.Error.WriteLine("       ChartDump <path-to-chart-folder-or-file> --pretty");
+            Console.Error.WriteLine("       ChartDump --batch <input-dir> <output-dir> [limit] [--pretty]");
+            return args.Length < 1 ? 1 : 0;
         }
 
         var path = args[0];
+        var writeIndented = HasFlag(args, "--pretty") || HasFlag(args, "-p");
         string chartFile;
 
         if (Directory.Exists(path))
@@ -64,7 +67,7 @@ class Program
             var dump = ParseAndDump(chartFile);
             var options = new JsonSerializerOptions
             {
-                WriteIndented = false,
+                WriteIndented = writeIndented,
                 DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
                 Converters = { new JsonStringEnumConverter() }
             };
@@ -77,6 +80,11 @@ class Program
             Console.Error.WriteLine(ex.StackTrace);
             return 2;
         }
+    }
+
+    static bool HasFlag(string[] args, string flag)
+    {
+        return args.Contains(flag, StringComparer.OrdinalIgnoreCase);
     }
 
     public static Dictionary<string, object?> ParseAndDump(string chartFile)
