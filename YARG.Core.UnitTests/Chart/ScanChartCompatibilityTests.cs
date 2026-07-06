@@ -1,4 +1,6 @@
 using System.Linq;
+using Melanchall.DryWetMidi.Common;
+using Melanchall.DryWetMidi.Core;
 using NUnit.Framework;
 using YARG.Core.Chart;
 using YARG.Core.Parsing;
@@ -110,6 +112,34 @@ public class ScanChartCompatibilityTests
         Assert.That(result.Hash, Is.EqualTo("fUvcjTPf_OQwDZw3PfQtJ0SQ4zxBydit9Y8-teld-EE="));
     }
 
+    [Test]
+    public void MidiGuitarBTrack_MatchesScanChart()
+    {
+        var midi = new MidiFile(
+            new TrackChunk(new SetTempoEvent(TempoChange.BpmToMicroSeconds(120))),
+            new TrackChunk(
+                new SequenceTrackNameEvent("PART GUITAR"),
+                NoteOn(0, 96),
+                NoteOn(0, 116),
+                NoteOff(120, 96),
+                NoteOn(0, 97),
+                NoteOff(240, 116),
+                NoteOff(0, 97)))
+        {
+            TimeDivision = new TicksPerQuarterNoteTimeDivision(128),
+        };
+
+        var chart = SongChart.FromMidi(ParseSettings.Default_Midi, midi);
+        var result = ChartTrackHasher.CalculateTrackHash(chart, Instrument.FiveFretGuitar, Difficulty.Expert);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(result.Hash, Is.EqualTo("nwygu9_JSlmvKdOlMMcWlKiDn_QOO4wvUkCBS36eNVc="));
+            Assert.That(ToHex(result.BTrack), Is.EqualTo(
+                "43484e46c0d73401800000000100000000000000000000000000000000005e4001000000000000000000000004000000040000000100000000000000000000006801000000000000000000000000000000000000020000000000000000000000780000000000000002000000010000007800000000000000f0000000000000000300000001000000"));
+        }
+    }
+
     private static BTrackHashResult CalculateDotChartHash(string trackName, Instrument instrument, params string[] trackLines)
     {
         var chartText = ChartText.Chart(
@@ -125,5 +155,24 @@ public class ScanChartCompatibilityTests
     private static string ToHex(byte[] bytes)
     {
         return Convert.ToHexString(bytes).ToLowerInvariant();
+    }
+
+    private static NoteOnEvent NoteOn(long delta, int note)
+    {
+        return new NoteOnEvent
+        {
+            DeltaTime = delta,
+            NoteNumber = (SevenBitNumber) note,
+            Velocity = (SevenBitNumber) 100,
+        };
+    }
+
+    private static NoteOffEvent NoteOff(long delta, int note)
+    {
+        return new NoteOffEvent
+        {
+            DeltaTime = delta,
+            NoteNumber = (SevenBitNumber) note,
+        };
     }
 }

@@ -7,6 +7,20 @@ namespace YARG.Core.UnitTests.Chart;
 
 public class ChartTrackHasherTests
 {
+    [TestCase(Instrument.FiveFretGuitar, true)]
+    [TestCase(Instrument.FiveFretBass, true)]
+    [TestCase(Instrument.Keys, true)]
+    [TestCase(Instrument.FourLaneDrums, true)]
+    [TestCase(Instrument.ProDrums, true)]
+    [TestCase(Instrument.FiveLaneDrums, true)]
+    [TestCase(Instrument.SixFretGuitar, false)]
+    [TestCase(Instrument.ProGuitar_17Fret, false)]
+    [TestCase(Instrument.Vocals, false)]
+    public void IsSupported_ReturnsExpectedSupport(Instrument instrument, bool expected)
+    {
+        Assert.That(ChartTrackHasher.IsSupported(instrument), Is.EqualTo(expected));
+    }
+
     [Test]
     public void CalculateTrackHash_MinimalFiveFretGuitar_MatchesReference()
     {

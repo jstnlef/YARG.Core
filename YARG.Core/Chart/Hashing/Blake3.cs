@@ -7,7 +7,6 @@ namespace YARG.Core.Chart
     internal static class Blake3
     {
         private const int OUT_LEN = 32;
-        private const int KEY_LEN = 32;
         private const int BLOCK_LEN = 64;
         private const int CHUNK_LEN = 1024;
 

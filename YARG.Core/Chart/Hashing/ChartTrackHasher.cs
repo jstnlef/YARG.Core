@@ -110,6 +110,19 @@ namespace YARG.Core.Chart
             return result;
         }
 
+        public static bool IsSupported(Instrument instrument)
+        {
+            return instrument is
+                Instrument.FiveFretGuitar or
+                Instrument.FiveFretBass or
+                Instrument.FiveFretRhythm or
+                Instrument.FiveFretCoopGuitar or
+                Instrument.Keys or
+                Instrument.FourLaneDrums or
+                Instrument.ProDrums or
+                Instrument.FiveLaneDrums;
+        }
+
         public static bool TryCalculateTrackHash(SongChart chart, Instrument instrument, Difficulty difficulty, out BTrackHashResult result)
         {
             result = default;
