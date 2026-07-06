@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.IO;
 using NUnit.Framework;
 using YARG.Core.Chart;
 
@@ -71,8 +73,159 @@ public class ChartTrackHasherTests
         }
     }
 
+    [Test]
+    public void CalculateTrackHash_OverlappingNotesOfSameType_ResolvesOverlap()
+    {
+        var chart = new SongChart(480);
+        var difficulty = new InstrumentDifficulty<GuitarNote>(Instrument.FiveFretGuitar, Difficulty.Expert);
+        difficulty.Notes.Add(new GuitarNote(FiveFretGuitarFret.Green, GuitarNoteType.Strum,
+            GuitarNoteFlags.None, NoteFlags.None, 0, 240, 0, 240));
+        difficulty.Notes.Add(new GuitarNote(FiveFretGuitarFret.Green, GuitarNoteType.Hopo,
+            GuitarNoteFlags.None, NoteFlags.None, 0, 60, 120, 60));
+
+        chart.FiveFretGuitar.AddDifficulty(Difficulty.Expert, difficulty);
+
+        var notes = ReadBTrack(ChartTrackHasher.CalculateTrackHash(chart, Instrument.FiveFretGuitar, Difficulty.Expert).BTrack).Notes;
+
+        Assert.That(notes, Is.EqualTo(new List<(long Tick, long Length, uint Type, uint Flags)>
+        {
+            (0, 120, 2, 1),
+            (120, 120, 2, 2),
+        }));
+    }
+
+    [Test]
+    public void CalculateTrackHash_OverlappingPhrases_ResolvesOverlap()
+    {
+        var chart = new SongChart(480);
+        var difficulty = new InstrumentDifficulty<GuitarNote>(Instrument.FiveFretGuitar, Difficulty.Expert);
+        difficulty.Notes.Add(new GuitarNote(FiveFretGuitarFret.Green, GuitarNoteType.Strum,
+            GuitarNoteFlags.None, NoteFlags.None, 0, 1, 0, 1));
+        difficulty.Notes.Add(new GuitarNote(FiveFretGuitarFret.Red, GuitarNoteType.Strum,
+            GuitarNoteFlags.None, NoteFlags.None, 0, 1, 120, 1));
+        difficulty.Phrases.Add(new Phrase(PhraseType.StarPower, 0, 240, 0, 240));
+        difficulty.Phrases.Add(new Phrase(PhraseType.StarPower, 0, 60, 120, 60));
+
+        chart.FiveFretGuitar.AddDifficulty(Difficulty.Expert, difficulty);
+
+        var starPower = ReadBTrack(ChartTrackHasher.CalculateTrackHash(chart, Instrument.FiveFretGuitar, Difficulty.Expert).BTrack).StarPower;
+
+        Assert.That(starPower, Is.EqualTo(new List<(long Tick, long Length)>
+        {
+            (0, 120),
+            (120, 120),
+        }));
+    }
+
+    [Test]
+    public void CalculateTrackHash_DuplicateDrumLane_KeepsLargestMutuallyExclusiveFlags()
+    {
+        var chart = new SongChart(480);
+        var difficulty = new InstrumentDifficulty<DrumNote>(Instrument.FourLaneDrums, Difficulty.Expert);
+        difficulty.Notes.Add(new DrumNote(FourLaneDrumPad.YellowDrum, DrumNoteType.Ghost,
+            DrumNoteFlags.None, NoteFlags.None, 0, 0));
+        difficulty.Notes.Add(new DrumNote(FourLaneDrumPad.YellowCymbal, DrumNoteType.Accent,
+            DrumNoteFlags.None, NoteFlags.None, 0, 0));
+
+        chart.FourLaneDrums.AddDifficulty(Difficulty.Expert, difficulty);
+
+        var notes = ReadBTrack(ChartTrackHasher.CalculateTrackHash(chart, Instrument.FourLaneDrums, Difficulty.Expert).BTrack).Notes;
+
+        Assert.That(notes, Is.EqualTo(new List<(long Tick, long Length, uint Type, uint Flags)>
+        {
+            (0, 0, 15, 1056),
+        }));
+    }
+
     private static string ToHex(byte[] bytes)
     {
         return Convert.ToHexString(bytes).ToLowerInvariant();
+    }
+
+    private static (List<(long Tick, long Length)> StarPower, List<(long Tick, long Length, uint Type, uint Flags)> Notes)
+        ReadBTrack(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes);
+        using var reader = new BinaryReader(stream);
+
+        stream.Position = 12;
+        SkipTempos(reader);
+        SkipTimeSignatures(reader);
+        var starPower = ReadPhrases(reader);
+        SkipPhrases(reader);
+        SkipFlexLanes(reader);
+        SkipDrumFreestyles(reader);
+        var notes = ReadNotes(reader);
+        return (starPower, notes);
+    }
+
+    private static void SkipTempos(BinaryReader reader)
+    {
+        var count = reader.ReadInt32();
+        for (var i = 0; i < count; i++)
+        {
+            reader.ReadInt64();
+            reader.ReadDouble();
+        }
+    }
+
+    private static void SkipTimeSignatures(BinaryReader reader)
+    {
+        var count = reader.ReadInt32();
+        for (var i = 0; i < count; i++)
+        {
+            reader.ReadInt64();
+            reader.ReadUInt32();
+            reader.ReadUInt32();
+        }
+    }
+
+    private static List<(long Tick, long Length)> ReadPhrases(BinaryReader reader)
+    {
+        var phrases = new List<(long Tick, long Length)>();
+        var count = reader.ReadInt32();
+        for (var i = 0; i < count; i++)
+        {
+            phrases.Add((reader.ReadInt64(), reader.ReadInt64()));
+        }
+        return phrases;
+    }
+
+    private static void SkipPhrases(BinaryReader reader)
+    {
+        ReadPhrases(reader);
+    }
+
+    private static void SkipFlexLanes(BinaryReader reader)
+    {
+        var count = reader.ReadInt32();
+        for (var i = 0; i < count; i++)
+        {
+            reader.ReadInt64();
+            reader.ReadInt64();
+            reader.ReadByte();
+        }
+    }
+
+    private static void SkipDrumFreestyles(BinaryReader reader)
+    {
+        var count = reader.ReadInt32();
+        for (var i = 0; i < count; i++)
+        {
+            reader.ReadInt64();
+            reader.ReadInt64();
+            reader.ReadByte();
+        }
+    }
+
+    private static List<(long Tick, long Length, uint Type, uint Flags)> ReadNotes(BinaryReader reader)
+    {
+        var notes = new List<(long Tick, long Length, uint Type, uint Flags)>();
+        var count = reader.ReadInt32();
+        for (var i = 0; i < count; i++)
+        {
+            notes.Add((reader.ReadInt64(), reader.ReadInt64(), reader.ReadUInt32(), reader.ReadUInt32()));
+        }
+        return notes;
     }
 }

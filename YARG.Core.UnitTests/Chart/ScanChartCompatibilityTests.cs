@@ -1,3 +1,4 @@
+using System.Linq;
 using NUnit.Framework;
 using YARG.Core.Chart;
 using YARG.Core.Parsing;
@@ -7,6 +8,28 @@ namespace YARG.Core.UnitTests.Chart;
 
 public class ScanChartCompatibilityTests
 {
+    [TestCase(
+        "overlap-notes",
+        Instrument.FiveFretGuitar,
+        "7wI3B2nnCfSocbvTuKChofoAe_nBODlvZs0GlOgnzqc=",
+        "43484e46c0d73401e00100000100000000000000000000000000000000005e4001000000000000000000000004000000040000000000000000000000000000000000000002000000000000000000000078000000000000000200000001000000780000000000000078000000000000000200000001000000",
+        new[]
+        {
+            "0 = N 0 240",
+            "120 = N 0 60",
+        })]
+    [TestCase(
+        "overlap-sp",
+        Instrument.FiveFretGuitar,
+        "7ZoDKiZcGK23VjHGJwHwyD0fIeewgf7N5d8DkJo5e-M=",
+        "43484e46c0d73401e00100000100000000000000000000000000000000005e40010000000000000000000000040000000400000002000000000000000000000078000000000000007800000000000000780000000000000000000000000000000000000002000000000000000000000000000000000000000200000001000000780000000000000000000000000000000300000002000000",
+        new[]
+        {
+            "0 = S 2 240",
+            "0 = N 0 0",
+            "120 = S 2 60",
+            "120 = N 1 0",
+        })]
     [TestCase(
         "same-fret-chord-single",
         Instrument.FiveFretGuitar,
@@ -73,6 +96,18 @@ public class ScanChartCompatibilityTests
             Assert.That(ToHex(result.BTrack), Is.EqualTo(
                 "43484e46c0d73401e00100000100000000000000000000000000000000005e4001000000000000000000000004000000040000000000000000000000000000000000000002000000000000000000000000000000000000000d00000000000000000000000000000000000000000000001100000010000000"));
         }
+    }
+
+    [Test]
+    public void DotChartLargeBTrackHash_MatchesScanChart()
+    {
+        var trackLines = Enumerable.Range(0, 100)
+            .Select(i => $"{i * 120} = N {i % 5} 60")
+            .ToArray();
+
+        var result = CalculateDotChartHash("ExpertSingle", Instrument.FiveFretGuitar, trackLines);
+
+        Assert.That(result.Hash, Is.EqualTo("fUvcjTPf_OQwDZw3PfQtJ0SQ4zxBydit9Y8-teld-EE="));
     }
 
     private static BTrackHashResult CalculateDotChartHash(string trackName, Instrument instrument, params string[] trackLines)

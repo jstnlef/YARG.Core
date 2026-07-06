@@ -37,6 +37,9 @@ namespace YARG.Core.Chart
             DoubleKick = 8,
             Tom = 16,
             Cymbal = 32,
+            DiscoNoFlip = 64,
+            Disco = 128,
+            Flam = 256,
             Ghost = 512,
             Accent = 1024,
         }
@@ -145,8 +148,8 @@ namespace YARG.Core.Chart
 
             var bTrack = WriteBTrack(
                 chart.SyncTrack,
-                PruneEmptyPhrases(GetPhrases(phrases, PhraseType.StarPower), notes),
-                PruneEmptyPhrases(GetPhrases(phrases, PhraseType.Solo), notes),
+                ResolvePhraseOverlaps(PruneEmptyPhrases(GetPhrases(phrases, PhraseType.StarPower), notes)),
+                ResolvePhraseOverlaps(PruneEmptyPhrases(GetPhrases(phrases, PhraseType.Solo), notes)),
                 PruneEmptyFlexLanes(GetFlexLanes(phrases), notes),
                 GetDrumFreestyles(phrases),
                 notes);
@@ -324,21 +327,46 @@ namespace YARG.Core.Chart
 
         private static List<BTrackNote> NormalizeNotes(List<BTrackNote> notes)
         {
-            return notes
+            var deduped = notes
                 .GroupBy(note => new { note.Tick, note.Type })
                 .Select(group => new BTrackNote(
                     group.Key.Tick,
                     group.Max(note => note.Length),
                     group.Key.Type,
-                    CombineFlags(group.Select(note => note.Flags))))
+                    NormalizeFlags(CombineFlags(group.Select(note => note.Flags)))))
                 .OrderBy(note => note.Tick)
                 .ThenBy(note => note.Type)
                 .ToList();
+
+            return ResolveNoteOverlaps(deduped);
         }
 
         private static BTrackNoteFlags CombineFlags(IEnumerable<BTrackNoteFlags> flags)
         {
             return flags.Aggregate(BTrackNoteFlags.None, (current, flag) => current | flag);
+        }
+
+        private static BTrackNoteFlags NormalizeFlags(BTrackNoteFlags flags)
+        {
+            flags = NormalizeFlagGroup(flags, BTrackNoteFlags.Strum, BTrackNoteFlags.Hopo, BTrackNoteFlags.Tap);
+            flags = NormalizeFlagGroup(flags, BTrackNoteFlags.DoubleKick, BTrackNoteFlags.Tom, BTrackNoteFlags.Cymbal);
+            flags = NormalizeFlagGroup(flags, BTrackNoteFlags.DiscoNoFlip, BTrackNoteFlags.Disco);
+            flags = NormalizeFlagGroup(flags, BTrackNoteFlags.Ghost, BTrackNoteFlags.Accent);
+            return flags;
+        }
+
+        private static BTrackNoteFlags NormalizeFlagGroup(BTrackNoteFlags flags, params BTrackNoteFlags[] group)
+        {
+            var selected = BTrackNoteFlags.None;
+            foreach (var flag in group)
+            {
+                if ((flags & flag) != 0)
+                {
+                    flags &= ~flag;
+                    selected = flag;
+                }
+            }
+            return flags | selected;
         }
 
         private static List<BTrackPhrase> GetPhrases(List<Phrase> phrases, PhraseType type)
@@ -381,6 +409,66 @@ namespace YARG.Core.Chart
             return phrases
                 .Where(phrase => notes.Any(note => note.Tick >= phrase.Tick && note.Tick < phrase.Tick + Math.Max(phrase.Length, 1)))
                 .ToList();
+        }
+
+        private static List<BTrackPhrase> ResolvePhraseOverlaps(List<BTrackPhrase> phrases)
+        {
+            var resolved = phrases.ToList();
+            for (var i = 0; i < resolved.Count - 1; i++)
+            {
+                var current = resolved[i];
+                var next = resolved[i + 1];
+                if (current.Tick >= next.Tick)
+                {
+                    continue;
+                }
+
+                var currentEnd = current.Tick + current.Length;
+                if (currentEnd <= next.Tick)
+                {
+                    continue;
+                }
+
+                var nextEnd = Math.Max(currentEnd, next.Tick + next.Length);
+                resolved[i] = new BTrackPhrase(current.Tick, next.Tick - current.Tick);
+                resolved[i + 1] = new BTrackPhrase(next.Tick, nextEnd - next.Tick);
+            }
+            return resolved;
+        }
+
+        private static List<BTrackNote> ResolveNoteOverlaps(List<BTrackNote> notes)
+        {
+            return notes
+                .GroupBy(note => note.Type)
+                .SelectMany(ResolveSameTypeNoteOverlaps)
+                .OrderBy(note => note.Tick)
+                .ThenBy(note => note.Type)
+                .ToList();
+        }
+
+        private static List<BTrackNote> ResolveSameTypeNoteOverlaps(IEnumerable<BTrackNote> notes)
+        {
+            var resolved = notes.OrderBy(note => note.Tick).ToList();
+            for (var i = 0; i < resolved.Count - 1; i++)
+            {
+                var current = resolved[i];
+                var next = resolved[i + 1];
+                if (current.Tick >= next.Tick)
+                {
+                    continue;
+                }
+
+                var currentEnd = current.Tick + current.Length;
+                if (currentEnd <= next.Tick)
+                {
+                    continue;
+                }
+
+                var nextEnd = Math.Max(currentEnd, next.Tick + next.Length);
+                resolved[i] = new BTrackNote(current.Tick, next.Tick - current.Tick, current.Type, current.Flags);
+                resolved[i + 1] = new BTrackNote(next.Tick, nextEnd - next.Tick, next.Type, next.Flags);
+            }
+            return resolved;
         }
 
         private static List<BTrackFlexLane> PruneEmptyFlexLanes(List<BTrackFlexLane> lanes, List<BTrackNote> notes)

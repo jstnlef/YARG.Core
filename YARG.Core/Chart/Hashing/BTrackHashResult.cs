@@ -1,5 +1,4 @@
 using System;
-using Data.HashFunction.Blake3;
 
 namespace YARG.Core.Chart
 {
@@ -19,8 +18,7 @@ namespace YARG.Core.Chart
 
         private static string ComputeHash(byte[] bTrack)
         {
-            var blake3 = Blake3Factory.Instance.Create(new Blake3Config { HashSizeInBits = 256 });
-            var hash = blake3.ComputeHash(bTrack).Hash;
+            var hash = Blake3.Hash(bTrack);
             return Convert.ToBase64String(hash)
                 .Replace('+', '-')
                 .Replace('/', '_');
