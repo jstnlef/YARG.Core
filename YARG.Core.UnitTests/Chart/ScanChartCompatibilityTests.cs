@@ -147,7 +147,7 @@ public class ScanChartCompatibilityTests
         };
 
         var chart = SongChart.FromMidi(ParseSettings.Default_Midi, midi);
-        var result = ChartTrackHasher.CalculateTrackHash(chart, Instrument.FiveFretGuitar, Difficulty.Expert);
+        var result = Hash(chart, Instrument.FiveFretGuitar, Difficulty.Expert);
 
         Assert.That(ReadNotes(result.BTrack), Is.EqualTo(new List<(long Tick, long Length, uint Type, uint Flags)>
         {
@@ -167,6 +167,12 @@ public class ScanChartCompatibilityTests
         Assert.That(result.Hash, Does.Not.EndWith("="));
     }
 
+    private static BTrackHashResult Hash(SongChart chart, Instrument instrument, Difficulty difficulty = Difficulty.Expert)
+    {
+        Assert.That(ChartTrackHasher.TryCalculateTrackHash(chart, instrument, difficulty, out var result), Is.True);
+        return result;
+    }
+
     private static BTrackHashResult CalculateDotChartHash(string trackName, Instrument instrument, params string[] trackLines)
     {
         var chartText = ChartText.Chart(
@@ -176,7 +182,7 @@ public class ScanChartCompatibilityTests
             ChartText.Section(trackName, trackLines));
 
         var chart = SongChart.FromDotChart(ParseSettings.Default_Chart, chartText.AsSpan());
-        return ChartTrackHasher.CalculateTrackHash(chart, instrument, Difficulty.Expert);
+        return Hash(chart, instrument, Difficulty.Expert);
     }
 
     private static byte[] StripForHash(byte[] bTrack)

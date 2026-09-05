@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -10,7 +11,6 @@ namespace YARG.Core.Chart
     {
         private const uint MAGIC = 0x43484E46;
         private const uint VERSION = 20260801;
-        private const ulong CompetitiveSectionIdMax = 9;
 
         private enum BTrackSectionId : ulong
         {
@@ -65,115 +65,6 @@ namespace YARG.Core.Chart
             Accent = 1024,
         }
 
-        private readonly struct BTrackPhrase
-        {
-            public readonly long Tick;
-            public readonly long Length;
-
-            public BTrackPhrase(long tick, long length)
-            {
-                Tick = tick;
-                Length = length;
-            }
-        }
-
-        private readonly struct BTrackFlexLane
-        {
-            public readonly long Tick;
-            public readonly long Length;
-            public readonly bool IsDouble;
-
-            public BTrackFlexLane(long tick, long length, bool isDouble)
-            {
-                Tick = tick;
-                Length = length;
-                IsDouble = isDouble;
-            }
-        }
-
-        private readonly struct BTrackDrumFreestyle
-        {
-            public readonly long Tick;
-            public readonly long Length;
-            public readonly bool IsCoda;
-
-            public BTrackDrumFreestyle(long tick, long length, bool isCoda)
-            {
-                Tick = tick;
-                Length = length;
-                IsCoda = isCoda;
-            }
-        }
-
-        private readonly struct BTrackNote
-        {
-            public readonly long Tick;
-            public readonly long Length;
-            public readonly BTrackNoteType Type;
-            public readonly BTrackNoteFlags Flags;
-
-            public BTrackNote(long tick, long length, BTrackNoteType type, BTrackNoteFlags flags)
-            {
-                Tick = tick;
-                Length = length;
-                Type = type;
-                Flags = flags;
-            }
-        }
-
-        private readonly struct BTrackRangeShift
-        {
-            public readonly long Tick;
-            public readonly long Position;
-            public readonly long Size;
-
-            public BTrackRangeShift(long tick, long position, long size)
-            {
-                Tick = tick;
-                Position = position;
-                Size = size;
-            }
-        }
-
-        private readonly struct BTrackSection
-        {
-            public readonly ulong Id;
-            public readonly byte[] Payload;
-
-            public BTrackSection(BTrackSectionId id, byte[] payload)
-            {
-                Id = (ulong) id;
-                Payload = payload;
-            }
-        }
-
-        public static BTrackHashResult CalculateTrackHash(SongChart chart, Instrument instrument, Difficulty difficulty)
-        {
-            if (!TryCalculateTrackHash(chart, instrument, difficulty, out var result))
-            {
-                throw new NotSupportedException($"Cannot calculate a BTrack hash for {instrument} {difficulty}.");
-            }
-
-            return result;
-        }
-
-        public static bool IsSupported(Instrument instrument)
-        {
-            return instrument is
-                Instrument.FiveFretGuitar or
-                Instrument.FiveFretBass or
-                Instrument.FiveFretRhythm or
-                Instrument.FiveFretCoopGuitar or
-                Instrument.Keys or
-                Instrument.SixFretGuitar or
-                Instrument.SixFretBass or
-                Instrument.SixFretRhythm or
-                Instrument.SixFretCoopGuitar or
-                Instrument.FourLaneDrums or
-                Instrument.ProDrums or
-                Instrument.FiveLaneDrums;
-        }
-
         public static bool TryCalculateTrackHash(SongChart chart, Instrument instrument, Difficulty difficulty, out BTrackHashResult result)
         {
             result = default;
@@ -181,7 +72,7 @@ namespace YARG.Core.Chart
             List<Phrase> phrases;
             List<TextEvent> textEvents;
             List<RangeShift> rangeShiftEvents;
-            List<BTrackNote> notes;
+            List<(long Tick, long Length, BTrackNoteType Type, BTrackNoteFlags Flags)> notes;
             switch (instrument)
             {
                 case Instrument.FiveFretGuitar:
@@ -196,7 +87,7 @@ namespace YARG.Core.Chart
                     phrases = guitarDifficulty.Phrases;
                     textEvents = guitarDifficulty.TextEvents;
                     rangeShiftEvents = guitarDifficulty.RangeShiftEvents;
-                    notes = NormalizeGuitarNotes(guitarDifficulty.Notes);
+                    notes = NormalizeGuitarNotes(guitarDifficulty.Notes, TryMapFiveFretNote);
                     break;
 
                 case Instrument.SixFretGuitar:
@@ -210,13 +101,13 @@ namespace YARG.Core.Chart
                     phrases = sixFretDifficulty.Phrases;
                     textEvents = sixFretDifficulty.TextEvents;
                     rangeShiftEvents = sixFretDifficulty.RangeShiftEvents;
-                    notes = NormalizeSixFretNotes(sixFretDifficulty.Notes);
+                    notes = NormalizeGuitarNotes(sixFretDifficulty.Notes, TryMapSixFretNote);
                     break;
 
                 case Instrument.FourLaneDrums:
                 case Instrument.ProDrums:
                 case Instrument.FiveLaneDrums:
-                    if (!GetDrumTrack(chart, instrument).TryGetDifficulty(difficulty, out var drumDifficulty))
+                    if (!chart.GetDrumsTrack(instrument).TryGetDifficulty(difficulty, out var drumDifficulty))
                     {
                         return false;
                     }
@@ -232,8 +123,10 @@ namespace YARG.Core.Chart
 
             result = WriteBTrack(
                 chart.SyncTrack,
-                ResolvePhraseOverlaps(PruneEmptyPhrases(GetPhrases(phrases, PhraseType.StarPower), notes)),
-                ResolvePhraseOverlaps(PruneEmptyPhrases(GetPhrases(phrases, PhraseType.Solo), notes)),
+                ResolveOverlaps(PruneEmptyPhrases(GetPhrases(phrases, PhraseType.StarPower), notes),
+                    phrase => phrase.Tick, phrase => phrase.Length, (_, tick, length) => (tick, length)),
+                ResolveOverlaps(PruneEmptyPhrases(GetPhrases(phrases, PhraseType.Solo), notes),
+                    phrase => phrase.Tick, phrase => phrase.Length, (_, tick, length) => (tick, length)),
                 PruneEmptyFlexLanes(GetFlexLanes(phrases), notes),
                 GetDrumFreestyles(phrases, textEvents),
                 GetRangeShifts(rangeShiftEvents),
@@ -241,50 +134,26 @@ namespace YARG.Core.Chart
             return true;
         }
 
-        private static InstrumentTrack<DrumNote> GetDrumTrack(SongChart chart, Instrument instrument)
+        private static List<(long Tick, long Length, BTrackNoteType Type, BTrackNoteFlags Flags)> NormalizeGuitarNotes(
+            List<GuitarNote> notes, TryMapFret tryMap)
         {
-            return instrument switch
-            {
-                Instrument.FourLaneDrums => chart.FourLaneDrums,
-                Instrument.ProDrums => chart.ProDrums,
-                Instrument.FiveLaneDrums => chart.FiveLaneDrums,
-                _ => throw new ArgumentException($"Instrument {instrument} is not a drums instrument.", nameof(instrument)),
-            };
-        }
-
-        private static List<BTrackNote> NormalizeGuitarNotes(List<GuitarNote> notes)
-        {
-            var normalized = new List<BTrackNote>();
+            var normalized = new List<(long Tick, long Length, BTrackNoteType Type, BTrackNoteFlags Flags)>();
             foreach (var note in notes)
             {
                 foreach (var child in note.AllNotes)
                 {
-                    if (TryMapGuitarNote(child, out var type))
+                    if (tryMap(child, out var type))
                     {
-                        normalized.Add(new BTrackNote(child.Tick, child.TickLength, type, MapGuitarFlags(child)));
+                        normalized.Add((child.Tick, child.TickLength, type, MapGuitarFlags(child)));
                     }
                 }
             }
             return NormalizeNotes(normalized);
         }
 
-        private static List<BTrackNote> NormalizeSixFretNotes(List<GuitarNote> notes)
-        {
-            var normalized = new List<BTrackNote>();
-            foreach (var note in notes)
-            {
-                foreach (var child in note.AllNotes)
-                {
-                    if (TryMapSixFretNote(child, out var type))
-                    {
-                        normalized.Add(new BTrackNote(child.Tick, child.TickLength, type, MapGuitarFlags(child)));
-                    }
-                }
-            }
-            return NormalizeNotes(normalized);
-        }
+        private delegate bool TryMapFret(GuitarNote note, out BTrackNoteType type);
 
-        private static bool TryMapGuitarNote(GuitarNote note, out BTrackNoteType type)
+        private static bool TryMapFiveFretNote(GuitarNote note, out BTrackNoteType type)
         {
             type = note.Fret switch
             {
@@ -325,16 +194,17 @@ namespace YARG.Core.Chart
             };
         }
 
-        private static List<BTrackNote> NormalizeDrumNotes(Instrument instrument, List<DrumNote> notes)
+        private static List<(long Tick, long Length, BTrackNoteType Type, BTrackNoteFlags Flags)> NormalizeDrumNotes(
+            Instrument instrument, List<DrumNote> notes)
         {
-            var normalized = new List<BTrackNote>();
+            var normalized = new List<(long Tick, long Length, BTrackNoteType Type, BTrackNoteFlags Flags)>();
             foreach (var note in notes)
             {
                 foreach (var child in note.AllNotes)
                 {
                     if (TryMapDrumNote(instrument, child, out var type, out var flags))
                     {
-                        normalized.Add(new BTrackNote(child.Tick, child.TickLength, type, flags));
+                        normalized.Add((child.Tick, child.TickLength, type, flags));
                     }
                 }
             }
@@ -440,20 +310,28 @@ namespace YARG.Core.Chart
             }
         }
 
-        private static List<BTrackNote> NormalizeNotes(List<BTrackNote> notes)
+        private static List<(long Tick, long Length, BTrackNoteType Type, BTrackNoteFlags Flags)> NormalizeNotes(
+            List<(long Tick, long Length, BTrackNoteType Type, BTrackNoteFlags Flags)> notes)
         {
             var deduped = notes
                 .GroupBy(note => new { note.Tick, note.Type })
-                .Select(group => new BTrackNote(
-                    group.Key.Tick,
-                    group.Max(note => note.Length),
-                    group.Key.Type,
-                    NormalizeFlags(CombineFlags(group.Select(note => note.Flags)))))
+                .Select(group => (
+                    Tick: group.Key.Tick,
+                    Length: group.Max(note => note.Length),
+                    Type: group.Key.Type,
+                    Flags: NormalizeFlags(CombineFlags(group.Select(note => note.Flags)))))
                 .OrderBy(note => note.Tick)
                 .ThenBy(note => note.Type)
                 .ToList();
 
-            return ResolveNoteOverlaps(deduped);
+            return deduped
+                .GroupBy(note => note.Type)
+                .SelectMany(group => ResolveOverlaps(group.OrderBy(note => note.Tick).ToList(),
+                    note => note.Tick, note => note.Length,
+                    (note, tick, length) => (tick, length, note.Type, note.Flags)))
+                .OrderBy(note => note.Tick)
+                .ThenBy(note => note.Type)
+                .ToList();
         }
 
         private static BTrackNoteFlags CombineFlags(IEnumerable<BTrackNoteFlags> flags)
@@ -484,36 +362,36 @@ namespace YARG.Core.Chart
             return flags | selected;
         }
 
-        private static List<BTrackPhrase> GetPhrases(List<Phrase> phrases, PhraseType type)
+        private static List<(long Tick, long Length)> GetPhrases(List<Phrase> phrases, PhraseType type)
         {
             return phrases
                 .Where(phrase => phrase.Type == type)
                 .GroupBy(phrase => phrase.Tick)
-                .Select(group => new BTrackPhrase(group.Key, group.Max(phrase =>
+                .Select(group => (Tick: (long) group.Key, Length: (long) group.Max(phrase =>
                     phrase.TickLength + (type == PhraseType.Solo ? 1 : 0))))
                 .OrderBy(phrase => phrase.Tick)
                 .ToList();
         }
 
-        private static List<BTrackFlexLane> GetFlexLanes(List<Phrase> phrases)
+        private static List<(long Tick, long Length, bool IsDouble)> GetFlexLanes(List<Phrase> phrases)
         {
             return phrases
                 .Where(phrase => phrase.Type is PhraseType.TremoloLane or PhraseType.TrillLane)
                 .GroupBy(phrase => new { phrase.Tick, IsDouble = phrase.Type == PhraseType.TrillLane })
-                .Select(group => new BTrackFlexLane(group.Key.Tick, group.Max(phrase => phrase.TickLength), group.Key.IsDouble))
+                .Select(group => (Tick: (long) group.Key.Tick, Length: (long) group.Max(phrase => phrase.TickLength), IsDouble: group.Key.IsDouble))
                 .OrderBy(lane => lane.Tick)
                 .ThenBy(lane => lane.IsDouble)
                 .ToList();
         }
 
-        private static List<BTrackDrumFreestyle> GetDrumFreestyles(List<Phrase> phrases, List<TextEvent> textEvents)
+        private static List<(long Tick, long Length, bool IsCoda)> GetDrumFreestyles(List<Phrase> phrases, List<TextEvent> textEvents)
         {
             return phrases
                 .Where(phrase => phrase.Type == PhraseType.DrumFill)
-                .Select(phrase => new BTrackDrumFreestyle(
-                    phrase.Tick,
-                    phrase.TickLength,
-                    HasCodaOnOrBefore(phrases, textEvents, phrase.Tick)))
+                .Select(phrase => (
+                    Tick: (long) phrase.Tick,
+                    Length: (long) phrase.TickLength,
+                    IsCoda: HasCodaOnOrBefore(phrases, textEvents, phrase.Tick)))
                 .OrderBy(phrase => phrase.Tick)
                 .ToList();
         }
@@ -535,99 +413,74 @@ namespace YARG.Core.Chart
                 trimmed.Equals("[coda]", StringComparison.OrdinalIgnoreCase);
         }
 
-        private static List<BTrackRangeShift> GetRangeShifts(List<RangeShift> rangeShifts)
+        private static List<(long Tick, long Position, long Size)> GetRangeShifts(List<RangeShift> rangeShifts)
         {
             return GetLastPerTick(rangeShifts, rangeShift => rangeShift.Tick)
-                .Select(rangeShift => new BTrackRangeShift(rangeShift.Tick, rangeShift.Range, rangeShift.Size))
+                .Select(rangeShift => (Tick: (long) rangeShift.Tick, Position: (long) rangeShift.Range, Size: (long) rangeShift.Size))
                 .ToList();
         }
 
-        private static List<BTrackPhrase> PruneEmptyPhrases(List<BTrackPhrase> phrases, List<BTrackNote> notes)
+        private static List<(long Tick, long Length)> PruneEmptyPhrases(
+            List<(long Tick, long Length)> phrases,
+            List<(long Tick, long Length, BTrackNoteType Type, BTrackNoteFlags Flags)> notes)
         {
             return phrases
                 .Where(phrase => notes.Any(note => note.Tick >= phrase.Tick && note.Tick < phrase.Tick + Math.Max(phrase.Length, 1)))
                 .ToList();
         }
 
-        private static List<BTrackPhrase> ResolvePhraseOverlaps(List<BTrackPhrase> phrases)
-        {
-            var resolved = phrases.ToList();
-            for (var i = 0; i < resolved.Count - 1; i++)
-            {
-                var current = resolved[i];
-                var next = resolved[i + 1];
-                if (current.Tick >= next.Tick)
-                {
-                    continue;
-                }
-
-                var currentEnd = current.Tick + current.Length;
-                if (currentEnd <= next.Tick)
-                {
-                    continue;
-                }
-
-                var nextEnd = Math.Max(currentEnd, next.Tick + next.Length);
-                resolved[i] = new BTrackPhrase(current.Tick, next.Tick - current.Tick);
-                resolved[i + 1] = new BTrackPhrase(next.Tick, nextEnd - next.Tick);
-            }
-            return resolved;
-        }
-
-        private static List<BTrackNote> ResolveNoteOverlaps(List<BTrackNote> notes)
-        {
-            return notes
-                .GroupBy(note => note.Type)
-                .SelectMany(ResolveSameTypeNoteOverlaps)
-                .OrderBy(note => note.Tick)
-                .ThenBy(note => note.Type)
-                .ToList();
-        }
-
-        private static List<BTrackNote> ResolveSameTypeNoteOverlaps(IEnumerable<BTrackNote> notes)
-        {
-            var resolved = notes.OrderBy(note => note.Tick).ToList();
-            for (var i = 0; i < resolved.Count - 1; i++)
-            {
-                var current = resolved[i];
-                var next = resolved[i + 1];
-                if (current.Tick >= next.Tick)
-                {
-                    continue;
-                }
-
-                var currentEnd = current.Tick + current.Length;
-                if (currentEnd <= next.Tick)
-                {
-                    continue;
-                }
-
-                var nextEnd = Math.Max(currentEnd, next.Tick + next.Length);
-                resolved[i] = new BTrackNote(current.Tick, next.Tick - current.Tick, current.Type, current.Flags);
-                resolved[i + 1] = new BTrackNote(next.Tick, nextEnd - next.Tick, next.Type, next.Flags);
-            }
-            return resolved;
-        }
-
-        private static List<BTrackFlexLane> PruneEmptyFlexLanes(List<BTrackFlexLane> lanes, List<BTrackNote> notes)
+        private static List<(long Tick, long Length, bool IsDouble)> PruneEmptyFlexLanes(
+            List<(long Tick, long Length, bool IsDouble)> lanes,
+            List<(long Tick, long Length, BTrackNoteType Type, BTrackNoteFlags Flags)> notes)
         {
             return lanes
                 .Where(lane => notes.Any(note => note.Tick >= lane.Tick && note.Tick <= lane.Tick + lane.Length))
                 .ToList();
         }
 
+        private static List<T> ResolveOverlaps<T>(
+            List<T> items,
+            Func<T, long> tick,
+            Func<T, long> length,
+            Func<T, long, long, T> withRange)
+        {
+            var resolved = items.ToList();
+            for (var i = 0; i < resolved.Count - 1; i++)
+            {
+                var currentTick = tick(resolved[i]);
+                var nextTick = tick(resolved[i + 1]);
+                if (currentTick >= nextTick)
+                {
+                    continue;
+                }
+
+                var currentEnd = currentTick + length(resolved[i]);
+                if (currentEnd <= nextTick)
+                {
+                    continue;
+                }
+
+                var nextEnd = Math.Max(currentEnd, nextTick + length(resolved[i + 1]));
+                resolved[i] = withRange(resolved[i], currentTick, nextTick - currentTick);
+                resolved[i + 1] = withRange(resolved[i + 1], nextTick, nextEnd - nextTick);
+            }
+            return resolved;
+        }
+
         private static BTrackHashResult WriteBTrack(
             SyncTrack syncTrack,
-            List<BTrackPhrase> starPower,
-            List<BTrackPhrase> soloSections,
-            List<BTrackFlexLane> flexLanes,
-            List<BTrackDrumFreestyle> drumFreestyles,
-            List<BTrackRangeShift> rangeShifts,
-            List<BTrackNote> notes)
+            List<(long Tick, long Length)> starPower,
+            List<(long Tick, long Length)> soloSections,
+            List<(long Tick, long Length, bool IsDouble)> flexLanes,
+            List<(long Tick, long Length, bool IsCoda)> drumFreestyles,
+            List<(long Tick, long Position, long Size)> rangeShifts,
+            List<(long Tick, long Length, BTrackNoteType Type, BTrackNoteFlags Flags)> notes)
         {
-            var sections = new List<BTrackSection>
+            var resolution = new byte[4];
+            BinaryPrimitives.WriteUInt32LittleEndian(resolution, syncTrack.Resolution);
+            var sections = new List<(ulong Id, byte[] Payload)>
             {
-                new(BTrackSectionId.Resolution, WriteResolution(syncTrack.Resolution)),
+                ((ulong) BTrackSectionId.Resolution, resolution),
             };
 
             AddListSection(sections, BTrackSectionId.TempoMarker, GetLastPerTick(syncTrack.Tempos, tempo => tempo.Tick),
@@ -686,19 +539,10 @@ namespace YARG.Core.Chart
                     writer.Write((uint) note.Flags);
                 });
 
-            sections.Sort((left, right) => left.Id.CompareTo(right.Id));
             return new BTrackHashResult(WriteFile(sections), WriteHashInput(sections));
         }
 
-        private static byte[] WriteResolution(uint resolution)
-        {
-            using var stream = new MemoryStream();
-            using var writer = new BinaryWriter(stream);
-            writer.Write(resolution);
-            return stream.ToArray();
-        }
-
-        private static void AddListSection<T>(List<BTrackSection> sections, BTrackSectionId id, List<T> items,
+        private static void AddListSection<T>(List<(ulong Id, byte[] Payload)> sections, BTrackSectionId id, List<T> items,
             Action<BinaryWriter, T> writeItem)
         {
             if (items.Count == 0)
@@ -714,10 +558,10 @@ namespace YARG.Core.Chart
                 writeItem(writer, item);
             }
 
-            sections.Add(new BTrackSection(id, stream.ToArray()));
+            sections.Add(((ulong) id, stream.ToArray()));
         }
 
-        private static byte[] WriteFile(List<BTrackSection> sections)
+        private static byte[] WriteFile(List<(ulong Id, byte[] Payload)> sections)
         {
             var headerSize = 8;
             var mapSize = 4 + sections.Count * 20;
@@ -725,7 +569,9 @@ namespace YARG.Core.Chart
 
             using var stream = new MemoryStream();
             using var writer = new BinaryWriter(stream);
-            WriteUInt32BigEndian(writer, MAGIC);
+            var magic = new byte[4];
+            BinaryPrimitives.WriteUInt32BigEndian(magic, MAGIC);
+            writer.Write(magic);
             writer.Write(VERSION);
             writer.Write((uint) sections.Count);
             foreach (var section in sections)
@@ -744,21 +590,17 @@ namespace YARG.Core.Chart
             return stream.ToArray();
         }
 
-        private static byte[] WriteHashInput(List<BTrackSection> sections)
+        private static byte[] WriteHashInput(List<(ulong Id, byte[] Payload)> sections)
         {
-            var competitive = sections
-                .Where(section => section.Id <= CompetitiveSectionIdMax)
-                .ToList();
-
             using var stream = new MemoryStream();
             using var writer = new BinaryWriter(stream);
-            writer.Write((uint) competitive.Count);
-            foreach (var section in competitive)
+            writer.Write((uint) sections.Count);
+            foreach (var section in sections)
             {
                 writer.Write(section.Id);
             }
 
-            foreach (var section in competitive)
+            foreach (var section in sections)
             {
                 writer.Write(section.Payload);
             }
@@ -769,20 +611,10 @@ namespace YARG.Core.Chart
         private static List<T> GetLastPerTick<T>(List<T> events, Func<T, uint> getTick)
         {
             return events
-                .Select((value, index) => new { value, index })
-                .GroupBy(item => getTick(item.value))
-                .Select(group => group.OrderByDescending(item => item.index).First().value)
+                .GroupBy(getTick)
+                .Select(group => group.Last())
                 .OrderBy(getTick)
                 .ToList();
         }
-
-        private static void WriteUInt32BigEndian(BinaryWriter writer, uint value)
-        {
-            writer.Write((byte) (value >> 24));
-            writer.Write((byte) (value >> 16));
-            writer.Write((byte) (value >> 8));
-            writer.Write((byte) value);
-        }
-
     }
 }

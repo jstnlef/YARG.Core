@@ -10,11 +10,6 @@ namespace YARG.Core.Chart
 
         public byte[] BTrack { get; }
 
-        public BTrackHashResult(byte[] bTrack)
-            : this(bTrack, bTrack)
-        {
-        }
-
         public BTrackHashResult(byte[] bTrack, byte[] hashInput)
         {
             BTrack = bTrack;

@@ -19,18 +19,11 @@ public class ChartTrackHasherTests
         "0200000001000000000000000900000000000000e00100000100000000000000" +
         "0000000001000000000000000200000001000000";
 
-    [TestCase(Instrument.FiveFretGuitar, true)]
-    [TestCase(Instrument.FiveFretBass, true)]
-    [TestCase(Instrument.Keys, true)]
-    [TestCase(Instrument.SixFretGuitar, true)]
-    [TestCase(Instrument.FourLaneDrums, true)]
-    [TestCase(Instrument.ProDrums, true)]
-    [TestCase(Instrument.FiveLaneDrums, true)]
-    [TestCase(Instrument.ProGuitar_17Fret, false)]
-    [TestCase(Instrument.Vocals, false)]
-    public void IsSupported_ReturnsExpectedSupport(Instrument instrument, bool expected)
+    [TestCase(Instrument.ProGuitar_17Fret)]
+    [TestCase(Instrument.Vocals)]
+    public void TryCalculateTrackHash_UnsupportedInstrument_ReturnsFalse(Instrument instrument)
     {
-        Assert.That(ChartTrackHasher.IsSupported(instrument), Is.EqualTo(expected));
+        Assert.That(ChartTrackHasher.TryCalculateTrackHash(CreateMinimalGuitarChart(), instrument, Difficulty.Expert, out _), Is.False);
     }
 
     [Test]
@@ -38,7 +31,7 @@ public class ChartTrackHasherTests
     {
         var chart = CreateMinimalGuitarChart();
 
-        var result = ChartTrackHasher.CalculateTrackHash(chart, Instrument.FiveFretGuitar, Difficulty.Expert);
+        var result = Hash(chart, Instrument.FiveFretGuitar, Difficulty.Expert);
 
         using (Assert.EnterMultipleScope())
         {
@@ -61,7 +54,7 @@ public class ChartTrackHasherTests
 
         chart.FiveFretGuitar.AddDifficulty(Difficulty.Expert, difficulty);
 
-        var notes = Parse(ChartTrackHasher.CalculateTrackHash(chart, Instrument.FiveFretGuitar, Difficulty.Expert).BTrack).Notes;
+        var notes = Parse(Hash(chart, Instrument.FiveFretGuitar, Difficulty.Expert).BTrack).Notes;
 
         Assert.That(notes, Is.EqualTo(new List<(long Tick, long Length, uint Type, uint Flags)>
         {
@@ -79,7 +72,7 @@ public class ChartTrackHasherTests
             GuitarNoteFlags.None, NoteFlags.None, 0, 1, 0, 1));
         chart.SixFretGuitar.AddDifficulty(Difficulty.Expert, difficulty);
 
-        var notes = Parse(ChartTrackHasher.CalculateTrackHash(chart, Instrument.SixFretGuitar, Difficulty.Expert).BTrack).Notes;
+        var notes = Parse(Hash(chart, Instrument.SixFretGuitar, Difficulty.Expert).BTrack).Notes;
 
         Assert.That(notes, Is.EqualTo(new List<(long Tick, long Length, uint Type, uint Flags)>
         {
@@ -100,7 +93,7 @@ public class ChartTrackHasherTests
 
         chart.FourLaneDrums.AddDifficulty(Difficulty.Expert, difficulty);
 
-        var notes = Parse(ChartTrackHasher.CalculateTrackHash(chart, Instrument.FourLaneDrums, Difficulty.Expert).BTrack).Notes;
+        var notes = Parse(Hash(chart, Instrument.FourLaneDrums, Difficulty.Expert).BTrack).Notes;
 
         Assert.That(notes, Is.EqualTo(new List<(long Tick, long Length, uint Type, uint Flags)>
         {
@@ -121,7 +114,7 @@ public class ChartTrackHasherTests
 
         chart.FiveFretGuitar.AddDifficulty(Difficulty.Expert, difficulty);
 
-        var notes = Parse(ChartTrackHasher.CalculateTrackHash(chart, Instrument.FiveFretGuitar, Difficulty.Expert).BTrack).Notes;
+        var notes = Parse(Hash(chart, Instrument.FiveFretGuitar, Difficulty.Expert).BTrack).Notes;
 
         Assert.That(notes, Is.EqualTo(new List<(long Tick, long Length, uint Type, uint Flags)>
         {
@@ -144,7 +137,7 @@ public class ChartTrackHasherTests
 
         chart.FiveFretGuitar.AddDifficulty(Difficulty.Expert, difficulty);
 
-        var starPower = Parse(ChartTrackHasher.CalculateTrackHash(chart, Instrument.FiveFretGuitar, Difficulty.Expert).BTrack).StarPower;
+        var starPower = Parse(Hash(chart, Instrument.FiveFretGuitar, Difficulty.Expert).BTrack).StarPower;
 
         Assert.That(starPower, Is.EqualTo(new List<(long Tick, long Length)>
         {
@@ -165,7 +158,7 @@ public class ChartTrackHasherTests
 
         chart.FourLaneDrums.AddDifficulty(Difficulty.Expert, difficulty);
 
-        var notes = Parse(ChartTrackHasher.CalculateTrackHash(chart, Instrument.FourLaneDrums, Difficulty.Expert).BTrack).Notes;
+        var notes = Parse(Hash(chart, Instrument.FourLaneDrums, Difficulty.Expert).BTrack).Notes;
 
         Assert.That(notes, Is.EqualTo(new List<(long Tick, long Length, uint Type, uint Flags)>
         {
@@ -183,7 +176,7 @@ public class ChartTrackHasherTests
         difficulty.RangeShiftEvents.Add(new RangeShift(0, 1, 120, 1, 3, 5));
         chart.FiveFretGuitar.AddDifficulty(Difficulty.Expert, difficulty);
 
-        var rangeShifts = Parse(ChartTrackHasher.CalculateTrackHash(chart, Instrument.FiveFretGuitar, Difficulty.Expert).BTrack).RangeShifts;
+        var rangeShifts = Parse(Hash(chart, Instrument.FiveFretGuitar, Difficulty.Expert).BTrack).RangeShifts;
 
         Assert.That(rangeShifts, Is.EqualTo(new List<(long Tick, long Position, long Size)>
         {
@@ -194,7 +187,7 @@ public class ChartTrackHasherTests
     [Test]
     public void CalculateTrackHash_OmitsEmptyListSections()
     {
-        var result = ChartTrackHasher.CalculateTrackHash(CreateMinimalGuitarChart(), Instrument.FiveFretGuitar, Difficulty.Expert);
+        var result = Hash(CreateMinimalGuitarChart(), Instrument.FiveFretGuitar, Difficulty.Expert);
         var parsed = Parse(result.BTrack);
 
         Assert.That(parsed.SectionIds, Is.EqualTo(new ulong[] { 1, 9 }));
@@ -203,9 +196,15 @@ public class ChartTrackHasherTests
     [Test]
     public void CalculateTrackHash_HashMatchesIndependentlyStrippedFile()
     {
-        var result = ChartTrackHasher.CalculateTrackHash(CreateMinimalGuitarChart(), Instrument.FiveFretGuitar, Difficulty.Expert);
+        var result = Hash(CreateMinimalGuitarChart(), Instrument.FiveFretGuitar, Difficulty.Expert);
 
         Assert.That(result.Hash, Is.EqualTo(HashBytes(StripForHash(result.BTrack))));
+    }
+
+    private static BTrackHashResult Hash(SongChart chart, Instrument instrument, Difficulty difficulty = Difficulty.Expert)
+    {
+        Assert.That(ChartTrackHasher.TryCalculateTrackHash(chart, instrument, difficulty, out var result), Is.True);
+        return result;
     }
 
     private static SongChart CreateMinimalGuitarChart()

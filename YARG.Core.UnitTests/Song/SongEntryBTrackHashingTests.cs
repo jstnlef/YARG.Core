@@ -122,6 +122,7 @@ public class SongEntryBTrackHashingTests
 
     private static string ExpectedGuitarHash()
     {
-        return ChartTrackHasher.CalculateTrackHash(CreateGuitarChart(), Instrument.FiveFretGuitar, Difficulty.Expert).Hash;
+        Assert.That(ChartTrackHasher.TryCalculateTrackHash(CreateGuitarChart(), Instrument.FiveFretGuitar, Difficulty.Expert, out var result), Is.True);
+        return result.Hash;
     }
 }

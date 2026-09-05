@@ -9,8 +9,6 @@ namespace YARG.Core.Song
         [NonSerialized]
         private ConcurrentDictionary<(Instrument Instrument, Difficulty Difficulty), BTrackHashResult> _bTrackHashCache = new();
 
-        private ConcurrentDictionary<(Instrument Instrument, Difficulty Difficulty), BTrackHashResult> BTrackHashCache => _bTrackHashCache;
-
         public bool TryGetBTrackHash(Instrument instrument, Difficulty difficulty, out BTrackHashResult result)
         {
             if (TryGetCachedBTrackHash(instrument, difficulty, out result))
@@ -39,7 +37,7 @@ namespace YARG.Core.Song
                 return false;
             }
 
-            BTrackHashCache.TryAdd((instrument, difficulty), result);
+            _bTrackHashCache.TryAdd((instrument, difficulty), result);
             return true;
         }
 
@@ -52,7 +50,7 @@ namespace YARG.Core.Song
 
         private bool TryGetCachedBTrackHash(Instrument instrument, Difficulty difficulty, out BTrackHashResult result)
         {
-            return BTrackHashCache.TryGetValue((instrument, difficulty), out result);
+            return _bTrackHashCache.TryGetValue((instrument, difficulty), out result);
         }
     }
 }
