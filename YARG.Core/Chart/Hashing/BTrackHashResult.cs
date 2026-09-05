@@ -11,17 +11,22 @@ namespace YARG.Core.Chart
         public byte[] BTrack { get; }
 
         public BTrackHashResult(byte[] bTrack)
+            : this(bTrack, bTrack)
         {
-            BTrack = bTrack;
-            _hash = new Lazy<string>(() => ComputeHash(bTrack));
         }
 
-        private static string ComputeHash(byte[] bTrack)
+        public BTrackHashResult(byte[] bTrack, byte[] hashInput)
         {
-            var hash = Blake3.Hash(bTrack);
+            BTrack = bTrack;
+            _hash = new Lazy<string>(() => Encode(Blake3.Hash(hashInput)));
+        }
+
+        internal static string Encode(byte[] hash)
+        {
             return Convert.ToBase64String(hash)
                 .Replace('+', '-')
-                .Replace('/', '_');
+                .Replace('/', '_')
+                .TrimEnd('=');
         }
     }
 }

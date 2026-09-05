@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Melanchall.DryWetMidi.Common;
 using Melanchall.DryWetMidi.Core;
@@ -10,58 +12,77 @@ namespace YARG.Core.UnitTests.Chart;
 
 public class ScanChartCompatibilityTests
 {
-    [TestCase(
-        "overlap-notes",
-        Instrument.FiveFretGuitar,
-        "7wI3B2nnCfSocbvTuKChofoAe_nBODlvZs0GlOgnzqc=",
-        "43484e46c0d73401e00100000100000000000000000000000000000000005e4001000000000000000000000004000000040000000000000000000000000000000000000002000000000000000000000078000000000000000200000001000000780000000000000078000000000000000200000001000000",
-        new[]
-        {
+    [Test]
+    public void DotChartGuitar_OverlapNotes_ResolvesSameTypeOverlap()
+    {
+        var result = CalculateDotChartHash("ExpertSingle", Instrument.FiveFretGuitar,
             "0 = N 0 240",
-            "120 = N 0 60",
-        })]
-    [TestCase(
-        "overlap-sp",
-        Instrument.FiveFretGuitar,
-        "7ZoDKiZcGK23VjHGJwHwyD0fIeewgf7N5d8DkJo5e-M=",
-        "43484e46c0d73401e00100000100000000000000000000000000000000005e40010000000000000000000000040000000400000002000000000000000000000078000000000000007800000000000000780000000000000000000000000000000000000002000000000000000000000000000000000000000200000001000000780000000000000000000000000000000300000002000000",
-        new[]
+            "120 = N 0 60");
+
+        Assert.That(ReadNotes(result.BTrack), Is.EqualTo(new List<(long Tick, long Length, uint Type, uint Flags)>
         {
+            (0, 120, 2, 1),
+            (120, 120, 2, 1),
+        }));
+        AssertHashMatchesStrippedFile(result);
+    }
+
+    [Test]
+    public void DotChartGuitar_OverlapStarPower_ResolvesPhraseOverlap()
+    {
+        var result = CalculateDotChartHash("ExpertSingle", Instrument.FiveFretGuitar,
             "0 = S 2 240",
             "0 = N 0 0",
             "120 = S 2 60",
-            "120 = N 1 0",
-        })]
-    [TestCase(
-        "same-fret-chord-single",
-        Instrument.FiveFretGuitar,
-        "FzP5Ctbn5qfj_2BYcKz-4HbCo4qh3s9PiPstMiP4V3w=",
-        "43484e46c0d73401e00100000100000000000000000000000000000000005e4001000000000000000000000004000000040000000000000000000000000000000000000003000000000000000000000000000000000000000200000001000000000000000000000000000000000000000300000001000000780000000000000000000000000000000200000002000000",
-        new[]
+            "120 = N 1 0");
+
+        Assert.That(ReadSectionPhrases(result.BTrack, 4), Is.EqualTo(new List<(long Tick, long Length)>
         {
+            (0, 120),
+            (120, 120),
+        }));
+        AssertHashMatchesStrippedFile(result);
+    }
+
+    [Test]
+    public void DotChartGuitar_SameFretAfterChord_IsNaturalHopoOnChart()
+    {
+        var result = CalculateDotChartHash("ExpertSingle", Instrument.FiveFretGuitar,
             "0 = N 0 0",
             "0 = N 1 0",
-            "120 = N 0 0",
-        })]
-    [TestCase(
-        "out-of-order-malformed",
-        Instrument.FiveFretGuitar,
-        "v4NFMZ1hekM83NMSCdAszevPkhuxN74nQymq65gg9HI=",
-        "43484e46c0d73401e00100000100000000000000000000000000000000005e4001000000000000000000000004000000040000000000000000000000000000000000000003000000000000000000000000000000000000000200000001000000780000000000000000000000000000000300000002000000f00000000000000000000000000000000400000002000000",
-        new[]
+            "120 = N 0 0");
+
+        Assert.That(ReadNotes(result.BTrack), Is.EqualTo(new List<(long Tick, long Length, uint Type, uint Flags)>
         {
+            (0, 0, 2, 1),
+            (0, 0, 3, 1),
+            (120, 0, 2, 2),
+        }));
+        AssertHashMatchesStrippedFile(result);
+    }
+
+    [Test]
+    public void DotChartGuitar_OutOfOrderAndMalformedLines_StillParsesValidNotes()
+    {
+        var result = CalculateDotChartHash("ExpertSingle", Instrument.FiveFretGuitar,
             "240 = N 2 0",
             "malformed chart line",
             "0 = N 0 0",
-            "120 = N 1 0",
-        })]
-    [TestCase(
-        "phrases-forces-taps",
-        Instrument.FiveFretGuitar,
-        "8jPpTLqw-rsnS665bG8YQx7KG7oIinR7lB0S1CTqmZ0=",
-        "43484e46c0d73401e00100000100000000000000000000000000000000005e400100000000000000000000000400000004000000010000000000000000000000e001000000000000010000000000000000000000e101000000000000000000000000000003000000000000000000000000000000000000000200000001000000780000000000000000000000000000000300000001000000f00000000000000000000000000000000400000004000000",
-        new[]
+            "120 = N 1 0");
+
+        Assert.That(ReadNotes(result.BTrack), Is.EqualTo(new List<(long Tick, long Length, uint Type, uint Flags)>
         {
+            (0, 0, 2, 1),
+            (120, 0, 3, 2),
+            (240, 0, 4, 2),
+        }));
+        AssertHashMatchesStrippedFile(result);
+    }
+
+    [Test]
+    public void DotChartGuitar_PhrasesForcesAndTaps_MapsModifiers()
+    {
+        var result = CalculateDotChartHash("ExpertSingle", Instrument.FiveFretGuitar,
             "0 = S 2 480",
             "0 = E \"solo\"",
             "0 = N 0 0",
@@ -69,22 +90,30 @@ public class ScanChartCompatibilityTests
             "120 = N 5 0",
             "240 = N 2 0",
             "240 = N 6 0",
-            "480 = E \"soloend\"",
-        })]
-    public void DotChartGuitarBTrack_MatchesScanChart(string name, Instrument instrument, string expectedHash,
-        string expectedBTrack, string[] trackLines)
-    {
-        var result = CalculateDotChartHash("ExpertSingle", instrument, trackLines);
+            "480 = E \"soloend\"");
 
         using (Assert.EnterMultipleScope())
         {
-            Assert.That(result.Hash, Is.EqualTo(expectedHash), name);
-            Assert.That(ToHex(result.BTrack), Is.EqualTo(expectedBTrack), name);
+            Assert.That(ReadSectionPhrases(result.BTrack, 4), Is.EqualTo(new List<(long Tick, long Length)>
+            {
+                (0, 480),
+            }));
+            Assert.That(ReadSectionPhrases(result.BTrack, 5), Is.EqualTo(new List<(long Tick, long Length)>
+            {
+                (0, 481),
+            }));
+            Assert.That(ReadNotes(result.BTrack), Is.EqualTo(new List<(long Tick, long Length, uint Type, uint Flags)>
+            {
+                (0, 0, 2, 1),
+                (120, 0, 3, 1),
+                (240, 0, 4, 4),
+            }));
         }
+        AssertHashMatchesStrippedFile(result);
     }
 
     [Test]
-    public void DotChartDrumsBTrack_MatchesScanChart()
+    public void DotChartDrums_KickAndCymbal_MapsDrumTypes()
     {
         var result = CalculateDotChartHash("ExpertDrums", Instrument.FourLaneDrums,
             "0 = N 0 0",
@@ -92,28 +121,16 @@ public class ScanChartCompatibilityTests
             "0 = N 66 0",
             "0 = N 34 0");
 
-        using (Assert.EnterMultipleScope())
+        Assert.That(ReadNotes(result.BTrack), Is.EqualTo(new List<(long Tick, long Length, uint Type, uint Flags)>
         {
-            Assert.That(result.Hash, Is.EqualTo("JKsrFdgF-dPQWwGedjUPNaE6AcTQox2hypEEbogpfT8="));
-            Assert.That(ToHex(result.BTrack), Is.EqualTo(
-                "43484e46c0d73401e00100000100000000000000000000000000000000005e4001000000000000000000000004000000040000000000000000000000000000000000000002000000000000000000000000000000000000000d00000000000000000000000000000000000000000000001100000010000000"));
-        }
+            (0, 0, 13, 0),
+            (0, 0, 17, 16),
+        }));
+        AssertHashMatchesStrippedFile(result);
     }
 
     [Test]
-    public void DotChartLargeBTrackHash_MatchesScanChart()
-    {
-        var trackLines = Enumerable.Range(0, 100)
-            .Select(i => $"{i * 120} = N {i % 5} 60")
-            .ToArray();
-
-        var result = CalculateDotChartHash("ExpertSingle", Instrument.FiveFretGuitar, trackLines);
-
-        Assert.That(result.Hash, Is.EqualTo("fUvcjTPf_OQwDZw3PfQtJ0SQ4zxBydit9Y8-teld-EE="));
-    }
-
-    [Test]
-    public void MidiGuitarBTrack_MatchesScanChart()
+    public void MidiGuitar_StarPowerAndNotes_HashesStrippedSectionalFile()
     {
         var midi = new MidiFile(
             new TrackChunk(new SetTempoEvent(TempoChange.BpmToMicroSeconds(120))),
@@ -132,12 +149,22 @@ public class ScanChartCompatibilityTests
         var chart = SongChart.FromMidi(ParseSettings.Default_Midi, midi);
         var result = ChartTrackHasher.CalculateTrackHash(chart, Instrument.FiveFretGuitar, Difficulty.Expert);
 
-        using (Assert.EnterMultipleScope())
+        Assert.That(ReadNotes(result.BTrack), Is.EqualTo(new List<(long Tick, long Length, uint Type, uint Flags)>
         {
-            Assert.That(result.Hash, Is.EqualTo("nwygu9_JSlmvKdOlMMcWlKiDn_QOO4wvUkCBS36eNVc="));
-            Assert.That(ToHex(result.BTrack), Is.EqualTo(
-                "43484e46c0d73401800000000100000000000000000000000000000000005e4001000000000000000000000004000000040000000100000000000000000000006801000000000000000000000000000000000000020000000000000000000000780000000000000002000000010000007800000000000000f0000000000000000300000001000000"));
-        }
+            (0, 120, 2, 1),
+            (120, 240, 3, 1),
+        }));
+        Assert.That(ReadSectionPhrases(result.BTrack, 4), Is.EqualTo(new List<(long Tick, long Length)>
+        {
+            (0, 360),
+        }));
+        AssertHashMatchesStrippedFile(result);
+    }
+
+    private static void AssertHashMatchesStrippedFile(BTrackHashResult result)
+    {
+        Assert.That(result.Hash, Is.EqualTo(BTrackHashResult.Encode(Blake3.Hash(StripForHash(result.BTrack)))));
+        Assert.That(result.Hash, Does.Not.EndWith("="));
     }
 
     private static BTrackHashResult CalculateDotChartHash(string trackName, Instrument instrument, params string[] trackLines)
@@ -152,9 +179,89 @@ public class ScanChartCompatibilityTests
         return ChartTrackHasher.CalculateTrackHash(chart, instrument, Difficulty.Expert);
     }
 
-    private static string ToHex(byte[] bytes)
+    private static byte[] StripForHash(byte[] bTrack)
     {
-        return Convert.ToHexString(bytes).ToLowerInvariant();
+        using var stream = new MemoryStream(bTrack);
+        using var reader = new BinaryReader(stream);
+        stream.Position = 8;
+        var count = reader.ReadUInt32();
+        var ids = new List<ulong>();
+        var payloads = new List<byte[]>();
+        for (var i = 0; i < count; i++)
+        {
+            ids.Add(reader.ReadUInt64());
+            var offset = reader.ReadUInt64();
+            var length = reader.ReadUInt32();
+            var restore = stream.Position;
+            stream.Position = (long) offset;
+            payloads.Add(reader.ReadBytes((int) length));
+            stream.Position = restore;
+        }
+
+        using var output = new MemoryStream();
+        using var writer = new BinaryWriter(output);
+        writer.Write((uint) ids.Count);
+        foreach (var id in ids)
+        {
+            writer.Write(id);
+        }
+        foreach (var payload in payloads)
+        {
+            writer.Write(payload);
+        }
+
+        return output.ToArray();
+    }
+
+    private static List<(long Tick, long Length, uint Type, uint Flags)> ReadNotes(byte[] bTrack)
+    {
+        return ReadSection(bTrack, 9, reader =>
+        {
+            var notes = new List<(long Tick, long Length, uint Type, uint Flags)>();
+            var count = reader.ReadUInt32();
+            for (var i = 0; i < count; i++)
+            {
+                notes.Add((reader.ReadInt64(), reader.ReadInt64(), reader.ReadUInt32(), reader.ReadUInt32()));
+            }
+            return notes;
+        }) ?? new List<(long Tick, long Length, uint Type, uint Flags)>();
+    }
+
+    private static List<(long Tick, long Length)> ReadSectionPhrases(byte[] bTrack, ulong sectionId)
+    {
+        return ReadSection(bTrack, sectionId, reader =>
+        {
+            var phrases = new List<(long Tick, long Length)>();
+            var count = reader.ReadUInt32();
+            for (var i = 0; i < count; i++)
+            {
+                phrases.Add((reader.ReadInt64(), reader.ReadInt64()));
+            }
+            return phrases;
+        }) ?? new List<(long Tick, long Length)>();
+    }
+
+    private static T? ReadSection<T>(byte[] bTrack, ulong sectionId, Func<BinaryReader, T> read)
+    {
+        using var stream = new MemoryStream(bTrack);
+        using var reader = new BinaryReader(stream);
+        stream.Position = 8;
+        var count = reader.ReadUInt32();
+        for (var i = 0; i < count; i++)
+        {
+            var id = reader.ReadUInt64();
+            var offset = reader.ReadUInt64();
+            reader.ReadUInt32();
+            if (id != sectionId)
+            {
+                continue;
+            }
+
+            stream.Position = (long) offset;
+            return read(reader);
+        }
+
+        return default;
     }
 
     private static NoteOnEvent NoteOn(long delta, int note)

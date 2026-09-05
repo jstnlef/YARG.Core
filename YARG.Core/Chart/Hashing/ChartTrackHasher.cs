@@ -9,7 +9,21 @@ namespace YARG.Core.Chart
     public static class ChartTrackHasher
     {
         private const uint MAGIC = 0x43484E46;
-        private const uint VERSION = 20240320;
+        private const uint VERSION = 20260801;
+        private const ulong CompetitiveSectionIdMax = 9;
+
+        private enum BTrackSectionId : ulong
+        {
+            Resolution = 1,
+            TempoMarker = 2,
+            TimeSignature = 3,
+            StarPower = 4,
+            SoloSection = 5,
+            FlexLane = 6,
+            DrumFreestyle = 7,
+            RangeShift = 8,
+            Note = 9,
+        }
 
         private enum BTrackNoteType : uint
         {
@@ -19,6 +33,13 @@ namespace YARG.Core.Chart
             Yellow = 4,
             Blue = 5,
             Orange = 6,
+
+            Black1 = 7,
+            Black2 = 8,
+            Black3 = 9,
+            White1 = 10,
+            White2 = 11,
+            White3 = 12,
 
             Kick = 13,
             RedDrum = 14,
@@ -100,6 +121,32 @@ namespace YARG.Core.Chart
             }
         }
 
+        private readonly struct BTrackRangeShift
+        {
+            public readonly long Tick;
+            public readonly long Position;
+            public readonly long Size;
+
+            public BTrackRangeShift(long tick, long position, long size)
+            {
+                Tick = tick;
+                Position = position;
+                Size = size;
+            }
+        }
+
+        private readonly struct BTrackSection
+        {
+            public readonly ulong Id;
+            public readonly byte[] Payload;
+
+            public BTrackSection(BTrackSectionId id, byte[] payload)
+            {
+                Id = (ulong) id;
+                Payload = payload;
+            }
+        }
+
         public static BTrackHashResult CalculateTrackHash(SongChart chart, Instrument instrument, Difficulty difficulty)
         {
             if (!TryCalculateTrackHash(chart, instrument, difficulty, out var result))
@@ -118,6 +165,10 @@ namespace YARG.Core.Chart
                 Instrument.FiveFretRhythm or
                 Instrument.FiveFretCoopGuitar or
                 Instrument.Keys or
+                Instrument.SixFretGuitar or
+                Instrument.SixFretBass or
+                Instrument.SixFretRhythm or
+                Instrument.SixFretCoopGuitar or
                 Instrument.FourLaneDrums or
                 Instrument.ProDrums or
                 Instrument.FiveLaneDrums;
@@ -128,6 +179,8 @@ namespace YARG.Core.Chart
             result = default;
 
             List<Phrase> phrases;
+            List<TextEvent> textEvents;
+            List<RangeShift> rangeShiftEvents;
             List<BTrackNote> notes;
             switch (instrument)
             {
@@ -141,7 +194,23 @@ namespace YARG.Core.Chart
                         return false;
                     }
                     phrases = guitarDifficulty.Phrases;
+                    textEvents = guitarDifficulty.TextEvents;
+                    rangeShiftEvents = guitarDifficulty.RangeShiftEvents;
                     notes = NormalizeGuitarNotes(guitarDifficulty.Notes);
+                    break;
+
+                case Instrument.SixFretGuitar:
+                case Instrument.SixFretBass:
+                case Instrument.SixFretRhythm:
+                case Instrument.SixFretCoopGuitar:
+                    if (!chart.GetSixFretTrack(instrument).TryGetDifficulty(difficulty, out var sixFretDifficulty))
+                    {
+                        return false;
+                    }
+                    phrases = sixFretDifficulty.Phrases;
+                    textEvents = sixFretDifficulty.TextEvents;
+                    rangeShiftEvents = sixFretDifficulty.RangeShiftEvents;
+                    notes = NormalizeSixFretNotes(sixFretDifficulty.Notes);
                     break;
 
                 case Instrument.FourLaneDrums:
@@ -152,6 +221,8 @@ namespace YARG.Core.Chart
                         return false;
                     }
                     phrases = drumDifficulty.Phrases;
+                    textEvents = drumDifficulty.TextEvents;
+                    rangeShiftEvents = drumDifficulty.RangeShiftEvents;
                     notes = NormalizeDrumNotes(instrument, drumDifficulty.Notes);
                     break;
 
@@ -159,15 +230,14 @@ namespace YARG.Core.Chart
                     return false;
             }
 
-            var bTrack = WriteBTrack(
+            result = WriteBTrack(
                 chart.SyncTrack,
                 ResolvePhraseOverlaps(PruneEmptyPhrases(GetPhrases(phrases, PhraseType.StarPower), notes)),
                 ResolvePhraseOverlaps(PruneEmptyPhrases(GetPhrases(phrases, PhraseType.Solo), notes)),
                 PruneEmptyFlexLanes(GetFlexLanes(phrases), notes),
-                GetDrumFreestyles(phrases),
+                GetDrumFreestyles(phrases, textEvents),
+                GetRangeShifts(rangeShiftEvents),
                 notes);
-
-            result = new BTrackHashResult(bTrack);
             return true;
         }
 
@@ -198,6 +268,22 @@ namespace YARG.Core.Chart
             return NormalizeNotes(normalized);
         }
 
+        private static List<BTrackNote> NormalizeSixFretNotes(List<GuitarNote> notes)
+        {
+            var normalized = new List<BTrackNote>();
+            foreach (var note in notes)
+            {
+                foreach (var child in note.AllNotes)
+                {
+                    if (TryMapSixFretNote(child, out var type))
+                    {
+                        normalized.Add(new BTrackNote(child.Tick, child.TickLength, type, MapGuitarFlags(child)));
+                    }
+                }
+            }
+            return NormalizeNotes(normalized);
+        }
+
         private static bool TryMapGuitarNote(GuitarNote note, out BTrackNoteType type)
         {
             type = note.Fret switch
@@ -208,6 +294,22 @@ namespace YARG.Core.Chart
                 (int) FiveFretGuitarFret.Yellow => BTrackNoteType.Yellow,
                 (int) FiveFretGuitarFret.Blue => BTrackNoteType.Blue,
                 (int) FiveFretGuitarFret.Orange => BTrackNoteType.Orange,
+                _ => default,
+            };
+            return type != default;
+        }
+
+        private static bool TryMapSixFretNote(GuitarNote note, out BTrackNoteType type)
+        {
+            type = note.Fret switch
+            {
+                (int) SixFretGuitarFret.Open => BTrackNoteType.Open,
+                (int) SixFretGuitarFret.Black1 => BTrackNoteType.Black1,
+                (int) SixFretGuitarFret.Black2 => BTrackNoteType.Black2,
+                (int) SixFretGuitarFret.Black3 => BTrackNoteType.Black3,
+                (int) SixFretGuitarFret.White1 => BTrackNoteType.White1,
+                (int) SixFretGuitarFret.White2 => BTrackNoteType.White2,
+                (int) SixFretGuitarFret.White3 => BTrackNoteType.White3,
                 _ => default,
             };
             return type != default;
@@ -404,16 +506,39 @@ namespace YARG.Core.Chart
                 .ToList();
         }
 
-        private static List<BTrackDrumFreestyle> GetDrumFreestyles(List<Phrase> phrases)
+        private static List<BTrackDrumFreestyle> GetDrumFreestyles(List<Phrase> phrases, List<TextEvent> textEvents)
         {
-            var codas = phrases.Where(phrase => phrase.Type == PhraseType.Coda).ToList();
             return phrases
                 .Where(phrase => phrase.Type == PhraseType.DrumFill)
                 .Select(phrase => new BTrackDrumFreestyle(
                     phrase.Tick,
                     phrase.TickLength,
-                    codas.Any(coda => phrase.Tick >= coda.Tick && phrase.Tick < coda.Tick + Math.Max(coda.TickLength, 1))))
+                    HasCodaOnOrBefore(phrases, textEvents, phrase.Tick)))
                 .OrderBy(phrase => phrase.Tick)
+                .ToList();
+        }
+
+        private static bool HasCodaOnOrBefore(List<Phrase> phrases, List<TextEvent> textEvents, uint tick)
+        {
+            if (phrases.Any(phrase => phrase.Type == PhraseType.Coda && phrase.Tick <= tick))
+            {
+                return true;
+            }
+
+            return textEvents.Any(textEvent => textEvent.Tick <= tick && IsCodaEvent(textEvent.Text));
+        }
+
+        private static bool IsCodaEvent(string text)
+        {
+            var trimmed = text.Trim();
+            return trimmed.Equals("coda", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals("[coda]", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static List<BTrackRangeShift> GetRangeShifts(List<RangeShift> rangeShifts)
+        {
+            return GetLastPerTick(rangeShifts, rangeShift => rangeShift.Tick)
+                .Select(rangeShift => new BTrackRangeShift(rangeShift.Tick, rangeShift.Range, rangeShift.Size))
                 .ToList();
         }
 
@@ -487,79 +612,155 @@ namespace YARG.Core.Chart
         private static List<BTrackFlexLane> PruneEmptyFlexLanes(List<BTrackFlexLane> lanes, List<BTrackNote> notes)
         {
             return lanes
-                .Where(lane => notes.Any(note => note.Tick >= lane.Tick && note.Tick < lane.Tick + Math.Max(lane.Length, 1)))
+                .Where(lane => notes.Any(note => note.Tick >= lane.Tick && note.Tick <= lane.Tick + lane.Length))
                 .ToList();
         }
 
-        private static byte[] WriteBTrack(
+        private static BTrackHashResult WriteBTrack(
             SyncTrack syncTrack,
             List<BTrackPhrase> starPower,
             List<BTrackPhrase> soloSections,
             List<BTrackFlexLane> flexLanes,
             List<BTrackDrumFreestyle> drumFreestyles,
+            List<BTrackRangeShift> rangeShifts,
             List<BTrackNote> notes)
+        {
+            var sections = new List<BTrackSection>
+            {
+                new(BTrackSectionId.Resolution, WriteResolution(syncTrack.Resolution)),
+            };
+
+            AddListSection(sections, BTrackSectionId.TempoMarker, GetLastPerTick(syncTrack.Tempos, tempo => tempo.Tick),
+                (writer, tempo) =>
+                {
+                    writer.Write((long) tempo.Tick);
+                    writer.Write(tempo.BeatsPerMinute);
+                });
+            AddListSection(sections, BTrackSectionId.TimeSignature,
+                GetLastPerTick(syncTrack.TimeSignatures, timeSignature => timeSignature.Tick),
+                (writer, timeSignature) =>
+                {
+                    writer.Write((long) timeSignature.Tick);
+                    writer.Write(timeSignature.Numerator);
+                    writer.Write(timeSignature.Denominator);
+                });
+            AddListSection(sections, BTrackSectionId.StarPower, starPower,
+                (writer, phrase) =>
+                {
+                    writer.Write(phrase.Tick);
+                    writer.Write(phrase.Length);
+                });
+            AddListSection(sections, BTrackSectionId.SoloSection, soloSections,
+                (writer, phrase) =>
+                {
+                    writer.Write(phrase.Tick);
+                    writer.Write(phrase.Length);
+                });
+            AddListSection(sections, BTrackSectionId.FlexLane, flexLanes,
+                (writer, lane) =>
+                {
+                    writer.Write(lane.Tick);
+                    writer.Write(lane.Length);
+                    writer.Write((byte) (lane.IsDouble ? 1 : 0));
+                });
+            AddListSection(sections, BTrackSectionId.DrumFreestyle, drumFreestyles,
+                (writer, phrase) =>
+                {
+                    writer.Write(phrase.Tick);
+                    writer.Write(phrase.Length);
+                    writer.Write((byte) (phrase.IsCoda ? 1 : 0));
+                });
+            AddListSection(sections, BTrackSectionId.RangeShift, rangeShifts,
+                (writer, rangeShift) =>
+                {
+                    writer.Write(rangeShift.Tick);
+                    writer.Write(rangeShift.Position);
+                    writer.Write(rangeShift.Size);
+                });
+            AddListSection(sections, BTrackSectionId.Note, notes,
+                (writer, note) =>
+                {
+                    writer.Write(note.Tick);
+                    writer.Write(note.Length);
+                    writer.Write((uint) note.Type);
+                    writer.Write((uint) note.Flags);
+                });
+
+            sections.Sort((left, right) => left.Id.CompareTo(right.Id));
+            return new BTrackHashResult(WriteFile(sections), WriteHashInput(sections));
+        }
+
+        private static byte[] WriteResolution(uint resolution)
         {
             using var stream = new MemoryStream();
             using var writer = new BinaryWriter(stream);
+            writer.Write(resolution);
+            return stream.ToArray();
+        }
 
+        private static void AddListSection<T>(List<BTrackSection> sections, BTrackSectionId id, List<T> items,
+            Action<BinaryWriter, T> writeItem)
+        {
+            if (items.Count == 0)
+            {
+                return;
+            }
+
+            using var stream = new MemoryStream();
+            using var writer = new BinaryWriter(stream);
+            writer.Write((uint) items.Count);
+            foreach (var item in items)
+            {
+                writeItem(writer, item);
+            }
+
+            sections.Add(new BTrackSection(id, stream.ToArray()));
+        }
+
+        private static byte[] WriteFile(List<BTrackSection> sections)
+        {
+            var headerSize = 8;
+            var mapSize = 4 + sections.Count * 20;
+            var offset = (ulong) (headerSize + mapSize);
+
+            using var stream = new MemoryStream();
+            using var writer = new BinaryWriter(stream);
             WriteUInt32BigEndian(writer, MAGIC);
             writer.Write(VERSION);
-            writer.Write(syncTrack.Resolution);
-
-            var tempos = GetLastPerTick(syncTrack.Tempos, tempo => tempo.Tick);
-            writer.Write(tempos.Count);
-            foreach (var tempo in tempos)
+            writer.Write((uint) sections.Count);
+            foreach (var section in sections)
             {
-                writer.Write((long) tempo.Tick);
-                writer.Write(tempo.BeatsPerMinute);
+                writer.Write(section.Id);
+                writer.Write(offset);
+                writer.Write((uint) section.Payload.Length);
+                offset += (ulong) section.Payload.Length;
             }
 
-            var timeSignatures = GetLastPerTick(syncTrack.TimeSignatures, timeSignature => timeSignature.Tick);
-            writer.Write(timeSignatures.Count);
-            foreach (var timeSignature in timeSignatures)
+            foreach (var section in sections)
             {
-                writer.Write((long) timeSignature.Tick);
-                writer.Write(timeSignature.Numerator);
-                writer.Write(timeSignature.Denominator);
+                writer.Write(section.Payload);
             }
 
-            writer.Write(starPower.Count);
-            foreach (var phrase in starPower)
+            return stream.ToArray();
+        }
+
+        private static byte[] WriteHashInput(List<BTrackSection> sections)
+        {
+            var competitive = sections
+                .Where(section => section.Id <= CompetitiveSectionIdMax)
+                .ToList();
+
+            using var stream = new MemoryStream();
+            using var writer = new BinaryWriter(stream);
+            writer.Write((uint) competitive.Count);
+            foreach (var section in competitive)
             {
-                writer.Write(phrase.Tick);
-                writer.Write(phrase.Length);
+                writer.Write(section.Id);
             }
 
-            writer.Write(soloSections.Count);
-            foreach (var phrase in soloSections)
+            foreach (var section in competitive)
             {
-                writer.Write(phrase.Tick);
-                writer.Write(phrase.Length);
-            }
-
-            writer.Write(flexLanes.Count);
-            foreach (var lane in flexLanes)
-            {
-                writer.Write(lane.Tick);
-                writer.Write(lane.Length);
-                writer.Write((byte) (lane.IsDouble ? 1 : 0));
-            }
-
-            writer.Write(drumFreestyles.Count);
-            foreach (var phrase in drumFreestyles)
-            {
-                writer.Write(phrase.Tick);
-                writer.Write(phrase.Length);
-                writer.Write((byte) (phrase.IsCoda ? 1 : 0));
-            }
-
-            writer.Write(notes.Count);
-            foreach (var note in notes)
-            {
-                writer.Write(note.Tick);
-                writer.Write(note.Length);
-                writer.Write((uint) note.Type);
-                writer.Write((uint) note.Flags);
+                writer.Write(section.Payload);
             }
 
             return stream.ToArray();

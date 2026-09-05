@@ -7,13 +7,25 @@ namespace YARG.Core.UnitTests.Chart;
 
 public class ChartTrackHasherTests
 {
+    // CHNF + version 20260801, resolution 480, one green strum at tick 0.
+    // Empty list sections are omitted. Offsets: map starts at 8, two entries (44-byte map),
+    // resolution payload at 52, notes payload at 56.
+    private const string MinimalGuitarBTrackHex =
+        "43484e46c1273501020000000100000000000000340000000000000004000000" +
+        "090000000000000038000000000000001c000000e00100000100000000000000" +
+        "0000000001000000000000000200000001000000";
+
+    private const string MinimalGuitarHashInputHex =
+        "0200000001000000000000000900000000000000e00100000100000000000000" +
+        "0000000001000000000000000200000001000000";
+
     [TestCase(Instrument.FiveFretGuitar, true)]
     [TestCase(Instrument.FiveFretBass, true)]
     [TestCase(Instrument.Keys, true)]
+    [TestCase(Instrument.SixFretGuitar, true)]
     [TestCase(Instrument.FourLaneDrums, true)]
     [TestCase(Instrument.ProDrums, true)]
     [TestCase(Instrument.FiveLaneDrums, true)]
-    [TestCase(Instrument.SixFretGuitar, false)]
     [TestCase(Instrument.ProGuitar_17Fret, false)]
     [TestCase(Instrument.Vocals, false)]
     public void IsSupported_ReturnsExpectedSupport(Instrument instrument, bool expected)
@@ -22,22 +34,17 @@ public class ChartTrackHasherTests
     }
 
     [Test]
-    public void CalculateTrackHash_MinimalFiveFretGuitar_MatchesReference()
+    public void CalculateTrackHash_MinimalFiveFretGuitar_WritesSectionalFileAndHashesStrippedInput()
     {
-        var chart = new SongChart(480);
-        var difficulty = new InstrumentDifficulty<GuitarNote>(Instrument.FiveFretGuitar, Difficulty.Expert);
-        difficulty.Notes.Add(new GuitarNote(FiveFretGuitarFret.Green, GuitarNoteType.Strum,
-            GuitarNoteFlags.None, NoteFlags.None, 0, 1, 0, 1));
-
-        chart.FiveFretGuitar.AddDifficulty(Difficulty.Expert, difficulty);
+        var chart = CreateMinimalGuitarChart();
 
         var result = ChartTrackHasher.CalculateTrackHash(chart, Instrument.FiveFretGuitar, Difficulty.Expert);
 
         using (Assert.EnterMultipleScope())
         {
-            Assert.That(result.Hash, Is.EqualTo("mAZCUM-lZIkXadmSwtJQp5LJip5yn6u-w9_dDCrDvrs="));
-            Assert.That(ToHex(result.BTrack), Is.EqualTo(
-                "43484e46c0d73401e001000000000000000000000000000000000000000000000000000001000000000000000000000001000000000000000200000001000000"));
+            Assert.That(ToHex(result.BTrack), Is.EqualTo(MinimalGuitarBTrackHex));
+            Assert.That(result.Hash, Is.EqualTo(HashHex(MinimalGuitarHashInputHex)));
+            Assert.That(result.Hash, Does.Not.EndWith("="));
         }
     }
 
@@ -54,18 +61,34 @@ public class ChartTrackHasherTests
 
         chart.FiveFretGuitar.AddDifficulty(Difficulty.Expert, difficulty);
 
-        var result = ChartTrackHasher.CalculateTrackHash(chart, Instrument.FiveFretGuitar, Difficulty.Expert);
+        var notes = Parse(ChartTrackHasher.CalculateTrackHash(chart, Instrument.FiveFretGuitar, Difficulty.Expert).BTrack).Notes;
 
-        using (Assert.EnterMultipleScope())
+        Assert.That(notes, Is.EqualTo(new List<(long Tick, long Length, uint Type, uint Flags)>
         {
-            Assert.That(result.Hash, Is.EqualTo("B3FcSYgwiDXfRr5AmF1xPxjkqImAg2d0-W_-F_1p-nM="));
-            Assert.That(ToHex(result.BTrack), Is.EqualTo(
-                "43484e46c0d73401e0010000000000000000000000000000000000000000000000000000020000000a00000000000000140000000000000002000000040000000a0000000000000014000000000000000300000004000000"));
-        }
+            (10, 20, 2, 4),
+            (10, 20, 3, 4),
+        }));
     }
 
     [Test]
-    public void CalculateTrackHash_DrumsKickAndAccentCymbal_MatchesReference()
+    public void CalculateTrackHash_SixFretNote_UsesSixFretNoteTypes()
+    {
+        var chart = new SongChart(480);
+        var difficulty = new InstrumentDifficulty<GuitarNote>(Instrument.SixFretGuitar, Difficulty.Expert);
+        difficulty.Notes.Add(new GuitarNote(SixFretGuitarFret.Black1, GuitarNoteType.Strum,
+            GuitarNoteFlags.None, NoteFlags.None, 0, 1, 0, 1));
+        chart.SixFretGuitar.AddDifficulty(Difficulty.Expert, difficulty);
+
+        var notes = Parse(ChartTrackHasher.CalculateTrackHash(chart, Instrument.SixFretGuitar, Difficulty.Expert).BTrack).Notes;
+
+        Assert.That(notes, Is.EqualTo(new List<(long Tick, long Length, uint Type, uint Flags)>
+        {
+            (0, 1, 7, 1),
+        }));
+    }
+
+    [Test]
+    public void CalculateTrackHash_DrumsKickAndAccentCymbal_MapsFlags()
     {
         var chart = new SongChart(480);
         var difficulty = new InstrumentDifficulty<DrumNote>(Instrument.FourLaneDrums, Difficulty.Expert);
@@ -77,14 +100,13 @@ public class ChartTrackHasherTests
 
         chart.FourLaneDrums.AddDifficulty(Difficulty.Expert, difficulty);
 
-        var result = ChartTrackHasher.CalculateTrackHash(chart, Instrument.FourLaneDrums, Difficulty.Expert);
+        var notes = Parse(ChartTrackHasher.CalculateTrackHash(chart, Instrument.FourLaneDrums, Difficulty.Expert).BTrack).Notes;
 
-        using (Assert.EnterMultipleScope())
+        Assert.That(notes, Is.EqualTo(new List<(long Tick, long Length, uint Type, uint Flags)>
         {
-            Assert.That(result.Hash, Is.EqualTo("osWLp5RtmcLKS0NbrG6eOdx-0_zjwvCarx9JLxQOI58="));
-            Assert.That(ToHex(result.BTrack), Is.EqualTo(
-                "43484e46c0d73401e001000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000d00000008000000000000000000000000000000000000001100000020040000"));
-        }
+            (0, 0, 13, 8),
+            (0, 0, 17, 1056),
+        }));
     }
 
     [Test]
@@ -99,7 +121,7 @@ public class ChartTrackHasherTests
 
         chart.FiveFretGuitar.AddDifficulty(Difficulty.Expert, difficulty);
 
-        var notes = ReadBTrack(ChartTrackHasher.CalculateTrackHash(chart, Instrument.FiveFretGuitar, Difficulty.Expert).BTrack).Notes;
+        var notes = Parse(ChartTrackHasher.CalculateTrackHash(chart, Instrument.FiveFretGuitar, Difficulty.Expert).BTrack).Notes;
 
         Assert.That(notes, Is.EqualTo(new List<(long Tick, long Length, uint Type, uint Flags)>
         {
@@ -122,7 +144,7 @@ public class ChartTrackHasherTests
 
         chart.FiveFretGuitar.AddDifficulty(Difficulty.Expert, difficulty);
 
-        var starPower = ReadBTrack(ChartTrackHasher.CalculateTrackHash(chart, Instrument.FiveFretGuitar, Difficulty.Expert).BTrack).StarPower;
+        var starPower = Parse(ChartTrackHasher.CalculateTrackHash(chart, Instrument.FiveFretGuitar, Difficulty.Expert).BTrack).StarPower;
 
         Assert.That(starPower, Is.EqualTo(new List<(long Tick, long Length)>
         {
@@ -143,7 +165,7 @@ public class ChartTrackHasherTests
 
         chart.FourLaneDrums.AddDifficulty(Difficulty.Expert, difficulty);
 
-        var notes = ReadBTrack(ChartTrackHasher.CalculateTrackHash(chart, Instrument.FourLaneDrums, Difficulty.Expert).BTrack).Notes;
+        var notes = Parse(ChartTrackHasher.CalculateTrackHash(chart, Instrument.FourLaneDrums, Difficulty.Expert).BTrack).Notes;
 
         Assert.That(notes, Is.EqualTo(new List<(long Tick, long Length, uint Type, uint Flags)>
         {
@@ -151,53 +173,153 @@ public class ChartTrackHasherTests
         }));
     }
 
+    [Test]
+    public void CalculateTrackHash_RangeShift_WritesRangeShiftSection()
+    {
+        var chart = new SongChart(480);
+        var difficulty = new InstrumentDifficulty<GuitarNote>(Instrument.FiveFretGuitar, Difficulty.Expert);
+        difficulty.Notes.Add(new GuitarNote(FiveFretGuitarFret.Green, GuitarNoteType.Strum,
+            GuitarNoteFlags.None, NoteFlags.None, 0, 1, 0, 1));
+        difficulty.RangeShiftEvents.Add(new RangeShift(0, 1, 120, 1, 3, 5));
+        chart.FiveFretGuitar.AddDifficulty(Difficulty.Expert, difficulty);
+
+        var rangeShifts = Parse(ChartTrackHasher.CalculateTrackHash(chart, Instrument.FiveFretGuitar, Difficulty.Expert).BTrack).RangeShifts;
+
+        Assert.That(rangeShifts, Is.EqualTo(new List<(long Tick, long Position, long Size)>
+        {
+            (120, 3, 5),
+        }));
+    }
+
+    [Test]
+    public void CalculateTrackHash_OmitsEmptyListSections()
+    {
+        var result = ChartTrackHasher.CalculateTrackHash(CreateMinimalGuitarChart(), Instrument.FiveFretGuitar, Difficulty.Expert);
+        var parsed = Parse(result.BTrack);
+
+        Assert.That(parsed.SectionIds, Is.EqualTo(new ulong[] { 1, 9 }));
+    }
+
+    [Test]
+    public void CalculateTrackHash_HashMatchesIndependentlyStrippedFile()
+    {
+        var result = ChartTrackHasher.CalculateTrackHash(CreateMinimalGuitarChart(), Instrument.FiveFretGuitar, Difficulty.Expert);
+
+        Assert.That(result.Hash, Is.EqualTo(HashBytes(StripForHash(result.BTrack))));
+    }
+
+    private static SongChart CreateMinimalGuitarChart()
+    {
+        var chart = new SongChart(480);
+        var difficulty = new InstrumentDifficulty<GuitarNote>(Instrument.FiveFretGuitar, Difficulty.Expert);
+        difficulty.Notes.Add(new GuitarNote(FiveFretGuitarFret.Green, GuitarNoteType.Strum,
+            GuitarNoteFlags.None, NoteFlags.None, 0, 1, 0, 1));
+        chart.FiveFretGuitar.AddDifficulty(Difficulty.Expert, difficulty);
+        return chart;
+    }
+
     private static string ToHex(byte[] bytes)
     {
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
-    private static (List<(long Tick, long Length)> StarPower, List<(long Tick, long Length, uint Type, uint Flags)> Notes)
-        ReadBTrack(byte[] bytes)
+    private static byte[] FromHex(string hex)
+    {
+        return Convert.FromHexString(hex);
+    }
+
+    private static string HashHex(string hex)
+    {
+        return HashBytes(FromHex(hex));
+    }
+
+    private static string HashBytes(byte[] bytes)
+    {
+        return BTrackHashResult.Encode(Blake3.Hash(bytes));
+    }
+
+    private static byte[] StripForHash(byte[] bTrack)
+    {
+        using var stream = new MemoryStream(bTrack);
+        using var reader = new BinaryReader(stream);
+        stream.Position = 8;
+        var count = reader.ReadUInt32();
+        var ids = new List<ulong>();
+        var payloads = new List<byte[]>();
+        for (var i = 0; i < count; i++)
+        {
+            ids.Add(reader.ReadUInt64());
+            var offset = reader.ReadUInt64();
+            var length = reader.ReadUInt32();
+            var restore = stream.Position;
+            stream.Position = (long) offset;
+            payloads.Add(reader.ReadBytes((int) length));
+            stream.Position = restore;
+        }
+
+        using var output = new MemoryStream();
+        using var writer = new BinaryWriter(output);
+        writer.Write((uint) ids.Count);
+        foreach (var id in ids)
+        {
+            writer.Write(id);
+        }
+        foreach (var payload in payloads)
+        {
+            writer.Write(payload);
+        }
+
+        return output.ToArray();
+    }
+
+    private static ParsedBTrack Parse(byte[] bytes)
     {
         using var stream = new MemoryStream(bytes);
         using var reader = new BinaryReader(stream);
 
-        stream.Position = 12;
-        SkipTempos(reader);
-        SkipTimeSignatures(reader);
-        var starPower = ReadPhrases(reader);
-        SkipPhrases(reader);
-        SkipFlexLanes(reader);
-        SkipDrumFreestyles(reader);
-        var notes = ReadNotes(reader);
-        return (starPower, notes);
-    }
-
-    private static void SkipTempos(BinaryReader reader)
-    {
-        var count = reader.ReadInt32();
+        var magic = (uint) ((reader.ReadByte() << 24) | (reader.ReadByte() << 16) | (reader.ReadByte() << 8) | reader.ReadByte());
+        var version = reader.ReadUInt32();
+        var count = reader.ReadUInt32();
+        var map = new List<(ulong Id, ulong Offset, uint Length)>();
         for (var i = 0; i < count; i++)
         {
-            reader.ReadInt64();
-            reader.ReadDouble();
+            map.Add((reader.ReadUInt64(), reader.ReadUInt64(), reader.ReadUInt32()));
         }
-    }
 
-    private static void SkipTimeSignatures(BinaryReader reader)
-    {
-        var count = reader.ReadInt32();
-        for (var i = 0; i < count; i++)
+        uint resolution = 0;
+        var starPower = new List<(long Tick, long Length)>();
+        var notes = new List<(long Tick, long Length, uint Type, uint Flags)>();
+        var rangeShifts = new List<(long Tick, long Position, long Size)>();
+        var sectionIds = new List<ulong>();
+
+        foreach (var entry in map)
         {
-            reader.ReadInt64();
-            reader.ReadUInt32();
-            reader.ReadUInt32();
+            sectionIds.Add(entry.Id);
+            stream.Position = (long) entry.Offset;
+            switch (entry.Id)
+            {
+                case 1:
+                    resolution = reader.ReadUInt32();
+                    break;
+                case 4:
+                    starPower = ReadPhrases(reader);
+                    break;
+                case 8:
+                    rangeShifts = ReadRangeShifts(reader);
+                    break;
+                case 9:
+                    notes = ReadNotes(reader);
+                    break;
+            }
         }
+
+        return new ParsedBTrack(magic, version, resolution, sectionIds, starPower, notes, rangeShifts);
     }
 
     private static List<(long Tick, long Length)> ReadPhrases(BinaryReader reader)
     {
         var phrases = new List<(long Tick, long Length)>();
-        var count = reader.ReadInt32();
+        var count = reader.ReadUInt32();
         for (var i = 0; i < count; i++)
         {
             phrases.Add((reader.ReadInt64(), reader.ReadInt64()));
@@ -205,41 +327,34 @@ public class ChartTrackHasherTests
         return phrases;
     }
 
-    private static void SkipPhrases(BinaryReader reader)
+    private static List<(long Tick, long Position, long Size)> ReadRangeShifts(BinaryReader reader)
     {
-        ReadPhrases(reader);
-    }
-
-    private static void SkipFlexLanes(BinaryReader reader)
-    {
-        var count = reader.ReadInt32();
+        var rangeShifts = new List<(long Tick, long Position, long Size)>();
+        var count = reader.ReadUInt32();
         for (var i = 0; i < count; i++)
         {
-            reader.ReadInt64();
-            reader.ReadInt64();
-            reader.ReadByte();
+            rangeShifts.Add((reader.ReadInt64(), reader.ReadInt64(), reader.ReadInt64()));
         }
-    }
-
-    private static void SkipDrumFreestyles(BinaryReader reader)
-    {
-        var count = reader.ReadInt32();
-        for (var i = 0; i < count; i++)
-        {
-            reader.ReadInt64();
-            reader.ReadInt64();
-            reader.ReadByte();
-        }
+        return rangeShifts;
     }
 
     private static List<(long Tick, long Length, uint Type, uint Flags)> ReadNotes(BinaryReader reader)
     {
         var notes = new List<(long Tick, long Length, uint Type, uint Flags)>();
-        var count = reader.ReadInt32();
+        var count = reader.ReadUInt32();
         for (var i = 0; i < count; i++)
         {
             notes.Add((reader.ReadInt64(), reader.ReadInt64(), reader.ReadUInt32(), reader.ReadUInt32()));
         }
         return notes;
     }
+
+    private readonly record struct ParsedBTrack(
+        uint Magic,
+        uint Version,
+        uint Resolution,
+        List<ulong> SectionIds,
+        List<(long Tick, long Length)> StarPower,
+        List<(long Tick, long Length, uint Type, uint Flags)> Notes,
+        List<(long Tick, long Position, long Size)> RangeShifts);
 }

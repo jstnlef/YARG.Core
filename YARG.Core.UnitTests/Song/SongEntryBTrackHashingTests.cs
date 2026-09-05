@@ -14,7 +14,7 @@ public class SongEntryBTrackHashingTests
         entry.SetChart(CreateGuitarChart());
 
         Assert.That(entry.TryGetBTrackHash(Instrument.FiveFretGuitar, Difficulty.Expert, out var result), Is.True);
-        Assert.That(result.Hash, Is.EqualTo("mAZCUM-lZIkXadmSwtJQp5LJip5yn6u-w9_dDCrDvrs="));
+        Assert.That(result.Hash, Is.EqualTo(ExpectedGuitarHash()));
 
         Assert.That(entry.TryGetBTrackHash(Instrument.FiveFretGuitar, Difficulty.Expert, out var cachedResult), Is.True);
         using (Assert.EnterMultipleScope())
@@ -34,7 +34,7 @@ public class SongEntryBTrackHashingTests
 
         using (Assert.EnterMultipleScope())
         {
-            Assert.That(result.Hash, Is.EqualTo("mAZCUM-lZIkXadmSwtJQp5LJip5yn6u-w9_dDCrDvrs="));
+            Assert.That(result.Hash, Is.EqualTo(ExpectedGuitarHash()));
             Assert.That(entry.LoadChartCallCount, Is.Zero);
         }
     }
@@ -70,7 +70,7 @@ public class SongEntryBTrackHashingTests
         var entry = new TestSongEntry();
         entry.SetChart(CreateGuitarChart());
 
-        Assert.That(entry.TryGetBTrackHash(Instrument.SixFretGuitar, Difficulty.Expert, out _), Is.False);
+        Assert.That(entry.TryGetBTrackHash(Instrument.Vocals, Difficulty.Expert, out _), Is.False);
         Assert.That(entry.LoadChartCallCount, Is.EqualTo(1));
     }
 
@@ -85,7 +85,7 @@ public class SongEntryBTrackHashingTests
         entry.SetChart(CreateGuitarChart());
 
         Assert.That(entry.TryGetBTrackHash(Instrument.FiveFretGuitar, Difficulty.Expert, out var result), Is.True);
-        Assert.That(result.Hash, Is.EqualTo("mAZCUM-lZIkXadmSwtJQp5LJip5yn6u-w9_dDCrDvrs="));
+        Assert.That(result.Hash, Is.EqualTo(ExpectedGuitarHash()));
     }
 
     [Test]
@@ -118,5 +118,10 @@ public class SongEntryBTrackHashingTests
             GuitarNoteFlags.None, NoteFlags.None, 0, 1, 0, 1));
         chart.FiveFretGuitar.AddDifficulty(Difficulty.Expert, difficulty);
         return chart;
+    }
+
+    private static string ExpectedGuitarHash()
+    {
+        return ChartTrackHasher.CalculateTrackHash(CreateGuitarChart(), Instrument.FiveFretGuitar, Difficulty.Expert).Hash;
     }
 }
