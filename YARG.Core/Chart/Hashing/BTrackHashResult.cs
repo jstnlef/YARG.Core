@@ -4,16 +4,14 @@ namespace YARG.Core.Chart.Hashing
 {
     public readonly struct BTrackHashResult
     {
-        private readonly Lazy<string> _hash;
-
-        public string Hash => _hash.Value;
-
         public byte[] BTrack { get; }
+
+        public string Hash { get; }
 
         public BTrackHashResult(byte[] bTrack, byte[] hashInput)
         {
             BTrack = bTrack;
-            _hash = new Lazy<string>(() => Encode(Blake3.Hash(hashInput)));
+            Hash = Encode(Blake3.Hash(hashInput));
         }
 
         internal static string Encode(byte[] hash)

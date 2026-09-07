@@ -170,7 +170,7 @@ public class ScanChartCompatibilityTests
 
     private static BTrackHashResult Hash(SongChart chart, Instrument instrument, Difficulty difficulty = Difficulty.Expert)
     {
-        Assert.That(ChartTrackHasher.TryCalculateTrackHash(chart, instrument, difficulty, out var result), Is.True);
+        Assert.That(BTrackHasher.TryCalculateTrackHash(chart, instrument, difficulty, out var result), Is.True);
         return result;
     }
 

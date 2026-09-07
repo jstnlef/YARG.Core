@@ -51,7 +51,7 @@ public class ScanChartGoldenVectorTests
                 ? SongChart.FromMidi(settings, Melanchall.DryWetMidi.Core.MidiFile.Read(sourcePath))
                 : SongChart.FromDotChart(settings, File.ReadAllText(sourcePath).AsSpan());
 
-            if (!ChartTrackHasher.TryCalculateTrackHash(chart, instrument, difficulty, out var result))
+            if (!BTrackHasher.TryCalculateTrackHash(chart, instrument, difficulty, out var result))
             {
                 mismatches.Add($"{id}: YARG could not hash {instrumentName}/{difficultyName}");
                 continue;

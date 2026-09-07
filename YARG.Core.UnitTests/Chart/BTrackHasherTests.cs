@@ -6,7 +6,7 @@ using YARG.Core.Chart.Hashing;
 
 namespace YARG.Core.UnitTests.Chart;
 
-public class ChartTrackHasherTests
+public class BTrackHasherTests
 {
     // CHNF + version 20260801, resolution 480, one green strum at tick 0.
     // Empty list sections are omitted. Offsets: map starts at 8, two entries (44-byte map),
@@ -24,7 +24,7 @@ public class ChartTrackHasherTests
     [TestCase(Instrument.Vocals)]
     public void TryCalculateTrackHash_UnsupportedInstrument_ReturnsFalse(Instrument instrument)
     {
-        Assert.That(ChartTrackHasher.TryCalculateTrackHash(CreateMinimalGuitarChart(), instrument, Difficulty.Expert, out _), Is.False);
+        Assert.That(BTrackHasher.TryCalculateTrackHash(CreateMinimalGuitarChart(), instrument, Difficulty.Expert, out _), Is.False);
     }
 
     [Test]
@@ -204,7 +204,7 @@ public class ChartTrackHasherTests
 
     private static BTrackHashResult Hash(SongChart chart, Instrument instrument, Difficulty difficulty = Difficulty.Expert)
     {
-        Assert.That(ChartTrackHasher.TryCalculateTrackHash(chart, instrument, difficulty, out var result), Is.True);
+        Assert.That(BTrackHasher.TryCalculateTrackHash(chart, instrument, difficulty, out var result), Is.True);
         return result;
     }
 

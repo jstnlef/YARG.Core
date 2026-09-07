@@ -33,7 +33,7 @@ namespace YARG.Core.Song
                 return true;
             }
 
-            if (!ChartTrackHasher.TryCalculateTrackHash(chart, instrument, difficulty, out result))
+            if (!BTrackHasher.TryCalculateTrackHash(chart, instrument, difficulty, out result))
             {
                 return false;
             }

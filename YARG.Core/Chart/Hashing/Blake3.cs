@@ -15,13 +15,13 @@ namespace YARG.Core.Chart.Hashing
         private const uint PARENT = 1 << 2;
         private const uint ROOT = 1 << 3;
 
-        private static readonly uint[] IV =
+        private static readonly uint[] Iv =
         {
             0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A,
             0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19,
         };
 
-        private static readonly byte[,] MSG_SCHEDULE =
+        private static readonly byte[,] MsgSchedule =
         {
             { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 },
             { 2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8 },
@@ -35,7 +35,7 @@ namespace YARG.Core.Chart.Hashing
         public static byte[] Hash(ReadOnlySpan<byte> input)
         {
             var key = new uint[8];
-            Array.Copy(IV, key, key.Length);
+            Array.Copy(Iv, key, key.Length);
 
             var stack = new List<uint[]>();
             ulong chunkCounter = 0;
@@ -52,7 +52,7 @@ namespace YARG.Core.Chart.Hashing
             var output = ChunkOutput(input.Slice(offset), key, chunkCounter, 0);
             while (stack.Count > 0)
             {
-                var left = stack[stack.Count - 1];
+                var left = stack[^1];
                 stack.RemoveAt(stack.Count - 1);
                 output = ParentOutput(left, ChainingValue(output), key, 0);
             }
@@ -64,7 +64,7 @@ namespace YARG.Core.Chart.Hashing
         {
             while ((totalChunks & 1) == 0)
             {
-                newCv = ParentChainingValue(stack[stack.Count - 1], newCv, key, flags);
+                newCv = ParentChainingValue(stack[^1], newCv, key, flags);
                 stack.RemoveAt(stack.Count - 1);
                 totalChunks >>= 1;
             }
@@ -151,10 +151,10 @@ namespace YARG.Core.Chart.Hashing
         {
             var state = new uint[16];
             Array.Copy(chainingValue, state, 8);
-            state[8] = IV[0];
-            state[9] = IV[1];
-            state[10] = IV[2];
-            state[11] = IV[3];
+            state[8] = Iv[0];
+            state[9] = Iv[1];
+            state[10] = Iv[2];
+            state[11] = Iv[3];
             state[12] = (uint) counter;
             state[13] = (uint) (counter >> 32);
             state[14] = blockLength;
@@ -179,14 +179,14 @@ namespace YARG.Core.Chart.Hashing
 
         private static void Round(uint[] state, uint[] message, int round)
         {
-            G(state, 0, 4, 8, 12, message[MSG_SCHEDULE[round, 0]], message[MSG_SCHEDULE[round, 1]]);
-            G(state, 1, 5, 9, 13, message[MSG_SCHEDULE[round, 2]], message[MSG_SCHEDULE[round, 3]]);
-            G(state, 2, 6, 10, 14, message[MSG_SCHEDULE[round, 4]], message[MSG_SCHEDULE[round, 5]]);
-            G(state, 3, 7, 11, 15, message[MSG_SCHEDULE[round, 6]], message[MSG_SCHEDULE[round, 7]]);
-            G(state, 0, 5, 10, 15, message[MSG_SCHEDULE[round, 8]], message[MSG_SCHEDULE[round, 9]]);
-            G(state, 1, 6, 11, 12, message[MSG_SCHEDULE[round, 10]], message[MSG_SCHEDULE[round, 11]]);
-            G(state, 2, 7, 8, 13, message[MSG_SCHEDULE[round, 12]], message[MSG_SCHEDULE[round, 13]]);
-            G(state, 3, 4, 9, 14, message[MSG_SCHEDULE[round, 14]], message[MSG_SCHEDULE[round, 15]]);
+            G(state, 0, 4, 8, 12, message[MsgSchedule[round, 0]], message[MsgSchedule[round, 1]]);
+            G(state, 1, 5, 9, 13, message[MsgSchedule[round, 2]], message[MsgSchedule[round, 3]]);
+            G(state, 2, 6, 10, 14, message[MsgSchedule[round, 4]], message[MsgSchedule[round, 5]]);
+            G(state, 3, 7, 11, 15, message[MsgSchedule[round, 6]], message[MsgSchedule[round, 7]]);
+            G(state, 0, 5, 10, 15, message[MsgSchedule[round, 8]], message[MsgSchedule[round, 9]]);
+            G(state, 1, 6, 11, 12, message[MsgSchedule[round, 10]], message[MsgSchedule[round, 11]]);
+            G(state, 2, 7, 8, 13, message[MsgSchedule[round, 12]], message[MsgSchedule[round, 13]]);
+            G(state, 3, 4, 9, 14, message[MsgSchedule[round, 14]], message[MsgSchedule[round, 15]]);
         }
 
         private static void G(uint[] state, int a, int b, int c, int d, uint x, uint y)

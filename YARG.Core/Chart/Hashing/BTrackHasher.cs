@@ -8,10 +8,11 @@ using System.Linq;
 
 namespace YARG.Core.Chart.Hashing
 {
-    public static class ChartTrackHasher
+    public static class BTrackHasher
     {
-        private const uint MAGIC = 0x43484E46;
-        private const uint VERSION = 20260801;
+        // Constant (identifies “CHNF” file type)
+        private const uint FileFormatHeader = 0x43484E46;
+        private const uint FileFormatVersion = 20260801;
 
         private enum BTrackSectionId : ulong
         {
@@ -540,7 +541,7 @@ namespace YARG.Core.Chart.Hashing
                     writer.Write((uint) note.Flags);
                 });
 
-            return new BTrackHashResult(WriteFile(sections), WriteHashInput(sections));
+            return new BTrackHashResult(WriteFileBytes(sections), WriteHashInputBytes(sections));
         }
 
         private static void AddListSection<T>(List<(ulong Id, byte[] Payload)> sections, BTrackSectionId id, List<T> items,
@@ -562,18 +563,18 @@ namespace YARG.Core.Chart.Hashing
             sections.Add(((ulong) id, stream.ToArray()));
         }
 
-        private static byte[] WriteFile(List<(ulong Id, byte[] Payload)> sections)
+        private static byte[] WriteFileBytes(List<(ulong Id, byte[] Payload)> sections)
         {
-            var headerSize = 8;
+            const int headerSize = 8;
             var mapSize = 4 + sections.Count * 20;
             var offset = (ulong) (headerSize + mapSize);
 
             using var stream = new MemoryStream();
             using var writer = new BinaryWriter(stream);
-            var magic = new byte[4];
-            BinaryPrimitives.WriteUInt32BigEndian(magic, MAGIC);
-            writer.Write(magic);
-            writer.Write(VERSION);
+            var formatHeader = new byte[4];
+            BinaryPrimitives.WriteUInt32BigEndian(formatHeader, FileFormatHeader);
+            writer.Write(formatHeader);
+            writer.Write(FileFormatVersion);
             writer.Write((uint) sections.Count);
             foreach (var section in sections)
             {
@@ -591,7 +592,7 @@ namespace YARG.Core.Chart.Hashing
             return stream.ToArray();
         }
 
-        private static byte[] WriteHashInput(List<(ulong Id, byte[] Payload)> sections)
+        private static byte[] WriteHashInputBytes(List<(ulong Id, byte[] Payload)> sections)
         {
             using var stream = new MemoryStream();
             using var writer = new BinaryWriter(stream);
