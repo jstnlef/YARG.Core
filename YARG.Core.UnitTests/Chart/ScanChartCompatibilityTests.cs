@@ -5,6 +5,7 @@ using Melanchall.DryWetMidi.Common;
 using Melanchall.DryWetMidi.Core;
 using NUnit.Framework;
 using YARG.Core.Chart;
+using YARG.Core.Chart.Hashing;
 using YARG.Core.Parsing;
 using YARG.Core.UnitTests.Parsing;
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using YARG.Core.Chart;
+using YARG.Core.Chart.Hashing;
 
 namespace YARG.Core.Song
 {

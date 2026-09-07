@@ -1,6 +1,7 @@
 using System;
 using NUnit.Framework;
 using YARG.Core.Chart;
+using YARG.Core.Chart.Hashing;
 using YARG.Core.Song;
 
 namespace YARG.Core.UnitTests.Song;

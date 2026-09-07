@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.IO;
 using NUnit.Framework;
 using YARG.Core.Chart;
+using YARG.Core.Chart.Hashing;
 
 namespace YARG.Core.UnitTests.Chart;
 

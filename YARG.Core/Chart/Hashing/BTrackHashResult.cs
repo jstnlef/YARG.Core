@@ -1,6 +1,6 @@
 using System;
 
-namespace YARG.Core.Chart
+namespace YARG.Core.Chart.Hashing
 {
     public readonly struct BTrackHashResult
     {

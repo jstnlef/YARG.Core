@@ -3,9 +3,10 @@ using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+
 // ReSharper disable InconsistentNaming
 
-namespace YARG.Core.Chart
+namespace YARG.Core.Chart.Hashing
 {
     public static class ChartTrackHasher
     {

@@ -2,7 +2,7 @@ using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 
-namespace YARG.Core.Chart
+namespace YARG.Core.Chart.Hashing
 {
     internal static class Blake3
     {
